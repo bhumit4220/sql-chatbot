@@ -1,9 +1,12 @@
+import logging
 import re
 from dataclasses import dataclass
 
 import sqlglot
 import sqlparse
 from sqlglot import exp
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -116,13 +119,23 @@ class SqlValidator:
             if isinstance(node, exp.Into):
                 return SqlValidationResult(False, rejection_reason="SELECT INTO not allowed")
 
+        # Collect SELECT aliases so they don't trigger false positives
+        # (e.g., ORDER BY contractor_count where contractor_count is a COUNT(*) alias)
+        select_aliases: set[str] = set()
+        for node in ast.walk():
+            if isinstance(node, exp.Alias):
+                select_aliases.add(node.alias.lower())
+
         # Column existence check (Audit 4 fix)
         for node in ast.walk():
             if isinstance(node, exp.Column):
                 col_name = node.name.lower()
                 if col_name == "*":
                     continue
+                if col_name in select_aliases:
+                    continue
                 if col_name not in self._all_columns:
+                    logger.warning("Validator rejected column '%s' in SQL: %s", node.name, sql[:200])
                     return SqlValidationResult(
                         False,
                         rejection_reason=f"Column '{node.name}' does not exist in the schema",
