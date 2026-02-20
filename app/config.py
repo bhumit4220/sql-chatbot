@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60
     encryption_key: str
     debug: bool = False
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
