@@ -1,11 +1,13 @@
 import os
 
+from cryptography.fernet import Fernet
+
 # Use SQLite for tests (override before any import of settings)
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/1")
 os.environ.setdefault("OPENAI_API_KEY", "sk-test-fake-key")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
-os.environ.setdefault("ENCRYPTION_KEY", "dGVzdC1lbmNyeXB0aW9uLWtleS0xMjM0NTY3ODk=")
+os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

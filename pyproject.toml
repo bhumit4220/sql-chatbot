@@ -14,7 +14,7 @@ dependencies = [
     "sqlglot==25.*",
     "sse-starlette==2.1.*",
     "python-jose[cryptography]==3.3.*",
-    "passlib[bcrypt]==1.7.*",
+    "bcrypt==5.*",
     "cryptography==43.*",
     "pydantic-settings==2.7.*",
     "structlog==24.*",
