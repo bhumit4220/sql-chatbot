@@ -12,6 +12,67 @@ interface Message {
   sql?: string
 }
 
+interface NavItem {
+  text: string
+  href: string
+}
+
+interface PageContext {
+  url: string
+  title: string
+  heading: string | null
+  breadcrumbs: NavItem[]
+  navigation: NavItem[]
+}
+
+function extractNavigation(): NavItem[] {
+  const navSelectors = [
+    'nav a',
+    '[class*="sidebar"] a',
+    '[class*="menu"] a',
+    '[class*="nav"] a',
+    '[role="navigation"] a',
+  ]
+
+  const links = new Set<string>()
+  const items: NavItem[] = []
+
+  for (const selector of navSelectors) {
+    document.querySelectorAll(selector).forEach(el => {
+      const a = el as HTMLAnchorElement
+      const href = a.getAttribute('href')
+      const text = a.textContent?.trim()
+      if (href && text && !links.has(href) && href !== '#') {
+        links.add(href)
+        // Detect parent-child hierarchy (M1)
+        const parentLi = a.closest('ul')?.closest('li')
+        const parentText = parentLi?.querySelector(':scope > a')?.textContent?.trim()
+        items.push({
+          text: parentText && parentText !== text ? `${parentText} → ${text}` : text,
+          href,
+        })
+      }
+    })
+  }
+
+  return items.slice(0, 80) // cap at 80 items
+}
+
+function getPageContext(): PageContext {
+  return {
+    url: window.location.href,
+    title: document.title,
+    heading: document.querySelector('h1, h2')?.textContent?.trim() || null,
+    breadcrumbs: Array.from(
+      document.querySelectorAll('[class*="breadcrumb"] a, nav[aria-label="breadcrumb"] a')
+    ).map(a => ({
+      text: a.textContent?.trim() || '',
+      href: a.getAttribute('href') || '',
+    })),
+    navigation: extractNavigation(),
+  }
+}
+
 export function ChatWidget({ apiKey, apiUrl, position }: Props) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
@@ -42,13 +103,19 @@ export function ChatWidget({ apiKey, apiUrl, position }: Props) {
     setLoading(true)
 
     try {
+      const pageContext = getPageContext()
+
       const resp = await fetch(`${apiUrl}/api/v1/chat/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-API-Key': apiKey,
         },
-        body: JSON.stringify({ question, session_id: sessionId.current }),
+        body: JSON.stringify({
+          question,
+          session_id: sessionId.current,
+          page_context: pageContext,
+        }),
       })
 
       if (!resp.ok) {
@@ -69,26 +136,69 @@ export function ChatWidget({ apiKey, apiUrl, position }: Props) {
         const chunk = decoder.decode(value, { stream: true })
         const lines = chunk.split('\n')
 
+        let currentEvent = 'message'
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim()
+          } else if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6))
-              if (data.token) {
-                assistantMsg += data.token
-                setMessages(prev => {
-                  const updated = [...prev]
-                  updated[updated.length - 1] = {
-                    role: 'assistant',
-                    content: assistantMsg,
-                    sql: currentSql || undefined,
+              switch (currentEvent) {
+                case 'message':
+                  if (data.token) {
+                    assistantMsg += data.token
+                    setMessages(prev => {
+                      const updated = [...prev]
+                      updated[updated.length - 1] = {
+                        role: 'assistant',
+                        content: assistantMsg,
+                        sql: currentSql || undefined,
+                      }
+                      return updated
+                    })
                   }
-                  return updated
-                })
-              }
-              if (data.sql) {
-                currentSql = data.sql
+                  break
+                case 'sql_generated':
+                  if (data.sql) {
+                    currentSql = data.sql
+                  }
+                  break
+                case 'info':
+                  // Could show an info indicator, for now append as text
+                  if (data.message) {
+                    assistantMsg += `_${data.message}_\n`
+                    setMessages(prev => {
+                      const updated = [...prev]
+                      updated[updated.length - 1] = {
+                        role: 'assistant',
+                        content: assistantMsg,
+                      }
+                      return updated
+                    })
+                  }
+                  break
+                case 'exploration':
+                  // Optional: show "Exploring data..." indicator
+                  break
+                case 'error':
+                  if (data.message) {
+                    assistantMsg = data.message
+                    setMessages(prev => {
+                      const updated = [...prev]
+                      updated[updated.length - 1] = {
+                        role: 'assistant',
+                        content: assistantMsg,
+                      }
+                      return updated
+                    })
+                  }
+                  break
+                case 'done':
+                  // End of stream — nothing to do
+                  break
               }
             } catch { /* ignore parse errors for non-JSON lines */ }
+            currentEvent = 'message' // reset after data
           }
         }
       }
