@@ -10,6 +10,7 @@ class ProjectCreate(BaseModel):
 
 class ProjectUpdate(BaseModel):
     name: str | None = None
+    autodiscovery_exclude_tables: list[str] | None = None
 
 
 class ProjectResponse(BaseModel):
@@ -18,10 +19,30 @@ class ProjectResponse(BaseModel):
     name: str
     schema_refresh_interval_hours: int
     daily_token_limit: int
+    autodiscovery_status: str = "pending"
+    autodiscovery_completed_at: datetime | None = None
+    autodiscovery_doc_count: int = 0
+    autodiscovery_error: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ReindexResponse(BaseModel):
+    status: str
+    message: str
+
+
+class SchemaDocumentSummary(BaseModel):
+    doc_type: str
+    count: int
+
+
+class SchemaDocumentsResponse(BaseModel):
+    project_id: int
+    total: int
+    by_type: list[SchemaDocumentSummary]
 
 
 class ProjectListResponse(BaseModel):
