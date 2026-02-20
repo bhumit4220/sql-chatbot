@@ -19,17 +19,18 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: ["6380:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
 
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:0.8.1-pg16-trixie
     environment:
       POSTGRES_USER: chatbot
       POSTGRES_PASSWORD: secret
       POSTGRES_DB: chatbot
+    ports: ["5433:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U chatbot"]
