@@ -6,6 +6,7 @@ from app.models.conversation import Conversation
 from app.models.knowledge_entry import KnowledgeEntry
 from app.models.message import Message
 from app.models.project import Project
+from app.models.schema_document import SchemaDocument
 
 __all__ = [
     "Base",
@@ -17,4 +18,5 @@ __all__ = [
     "Conversation",
     "Message",
     "AuditLog",
+    "SchemaDocument",
 ]
