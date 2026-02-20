@@ -48,7 +48,7 @@ def upgrade() -> None:
     op.create_table(
         "api_keys",
         sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("key_prefix", sa.String(12), nullable=False),
+        sa.Column("key_prefix", sa.String(16), nullable=False),
         sa.Column("key_hash", sa.String(64), unique=True, index=True, nullable=False),
         sa.Column("project_id", sa.Integer, sa.ForeignKey("projects.id"), nullable=False),
         sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.text("true")),

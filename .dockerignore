@@ -1,0 +1,13 @@
+.venv
+__pycache__
+*.pyc
+.git
+.env
+.ruff_cache
+node_modules
+widget/node_modules
+widget/src
+tests
+docs
+memory
+*.egg-info

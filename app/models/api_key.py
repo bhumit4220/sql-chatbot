@@ -10,7 +10,7 @@ class ApiKey(Base, TimestampMixin):
     __tablename__ = "api_keys"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    key_prefix: Mapped[str] = mapped_column(String(12))
+    key_prefix: Mapped[str] = mapped_column(String(16))
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
