@@ -55,12 +55,13 @@ MAX_LIMIT = 500
 
 
 class SqlValidator:
-    def __init__(self, schema: dict[str, list[str]]):
+    def __init__(self, schema: dict[str, list[str]], exclude_tables: list[str] | None = None):
         """schema: {"table_name": ["col1", "col2", ...], ...}"""
         self.schema = schema
         self._all_columns: set[str] = set()
         for cols in schema.values():
             self._all_columns.update(c.lower() for c in cols)
+        self._exclude_tables: set[str] = {t.lower() for t in (exclude_tables or [])}
 
     def validate(self, sql: str) -> SqlValidationResult:
         # Layer 2: sqlparse — single statement, SELECT only
@@ -126,6 +127,17 @@ class SqlValidator:
                         False,
                         rejection_reason=f"Column '{node.name}' does not exist in the schema",
                     )
+
+        # Excluded table check (I8 — reject queries referencing excluded tables)
+        if self._exclude_tables:
+            for node in ast.walk():
+                if isinstance(node, exp.Table):
+                    table_name = node.name.lower()
+                    if table_name in self._exclude_tables:
+                        return SqlValidationResult(
+                            False,
+                            rejection_reason=f"Table '{node.name}' is excluded from queries",
+                        )
 
         # Force LIMIT if missing
         modified = sql
