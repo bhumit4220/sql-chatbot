@@ -1,6 +1,6 @@
 import secrets
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
@@ -40,9 +40,7 @@ async def list_projects(
 
 
 async def get_project(session: AsyncSession, admin_id: int, project_id: int) -> Project:
-    result = await session.execute(
-        select(Project).where(Project.id == project_id, Project.owner_admin_id == admin_id)
-    )
+    result = await session.execute(select(Project).where(Project.id == project_id, Project.owner_admin_id == admin_id))
     project = result.scalar_one_or_none()
     if project is None:
         raise NotFoundError("Project not found")

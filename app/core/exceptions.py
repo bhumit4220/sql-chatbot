@@ -2,7 +2,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 
-class ChatbotException(Exception):
+class ChatbotException(Exception):  # noqa: N818
     def __init__(self, message: str = "Internal error", status_code: int = 500):
         self.message = message
         self.status_code = status_code

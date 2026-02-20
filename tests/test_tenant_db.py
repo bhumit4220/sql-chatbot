@@ -3,8 +3,8 @@ from unittest.mock import patch
 
 import pytest
 
-from app.services.tenant_db import TenantDBManager
 from app.core.security import encrypt_connection_string
+from app.services.tenant_db import TenantDBManager
 
 
 @pytest.fixture

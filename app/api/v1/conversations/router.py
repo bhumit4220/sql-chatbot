@@ -1,8 +1,8 @@
 import json
 
 from fastapi import APIRouter, Depends
-from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sse_starlette.sse import EventSourceResponse
 
 from app.api.v1.auth.dependencies import verify_api_key
 from app.api.v1.conversations.schemas import ChatRequest
@@ -43,9 +43,7 @@ async def chat_stream(
         # Load schema
         schema_text = project.schema_cache or ""
         if not schema_text:
-            engine = await tenant_db_manager.get_engine(
-                project.id, project.connection_string_encrypted
-            )
+            engine = await tenant_db_manager.get_engine(project.id, project.connection_string_encrypted)
             raw_schema = await schema_inspector.inspect_database(engine)
             stripped = schema_inspector.strip_sensitive_columns(raw_schema)
             schema_text = schema_inspector.format_for_prompt(stripped)
@@ -76,23 +74,17 @@ async def chat_stream(
             if not validation.is_valid:
                 yield {
                     "event": "error",
-                    "data": json.dumps(
-                        {"message": "I generated an unsafe query and blocked it. Could you rephrase?"}
-                    ),
+                    "data": json.dumps({"message": "I generated an unsafe query and blocked it. Could you rephrase?"}),
                 }
                 return
 
             yield {
                 "event": "sql_generated",
-                "data": json.dumps(
-                    {"sql": validation.modified_sql, "explanation": sql_result.explanation}
-                ),
+                "data": json.dumps({"sql": validation.modified_sql, "explanation": sql_result.explanation}),
             }
 
             # Execute SQL
-            engine = await tenant_db_manager.get_engine(
-                project.id, project.connection_string_encrypted
-            )
+            engine = await tenant_db_manager.get_engine(project.id, project.connection_string_encrypted)
             exec_result = await sql_executor.execute(engine, validation.modified_sql)
 
             if not exec_result.success:
@@ -140,9 +132,7 @@ async def get_conversation(
     api_key: ApiKey = Depends(verify_api_key),
     session: AsyncSession = Depends(get_session),
 ):
-    messages = await conversation_service.get_messages_by_udid(
-        session, conversation_udid, api_key.project_id
-    )
+    messages = await conversation_service.get_messages_by_udid(session, conversation_udid, api_key.project_id)
     return {"messages": messages}
 
 

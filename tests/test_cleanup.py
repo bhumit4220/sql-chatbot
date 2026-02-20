@@ -1,14 +1,14 @@
-import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select, update
 
-from app.tasks.cleanup import cleanup_expired_conversations
+from app.core.security import hash_password
 from app.models.admin import Admin
-from app.models.project import Project
 from app.models.conversation import Conversation
 from app.models.message import Message
-from app.core.security import hash_password
+from app.models.project import Project
+from app.tasks.cleanup import cleanup_expired_conversations
 
 
 @pytest.fixture
@@ -32,10 +32,8 @@ async def test_deletes_old_conversations(db_session, cleanup_setup):
     await db_session.flush()
 
     # Manually set updated_at to 100 days ago
-    old_time = datetime.now(timezone.utc) - timedelta(days=100)
-    await db_session.execute(
-        update(Conversation).where(Conversation.id == old_conv.id).values(updated_at=old_time)
-    )
+    old_time = datetime.now(UTC) - timedelta(days=100)
+    await db_session.execute(update(Conversation).where(Conversation.id == old_conv.id).values(updated_at=old_time))
 
     # Add a message to the old conversation
     msg = Message(conversation_id=old_conv.id, role="user", content="old message")

@@ -1,11 +1,14 @@
-import re
-
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-
 SENSITIVE_PATTERNS = [
-    "password", "pwd", "token", "secret", "ssn", "api_key", "salt",
+    "password",
+    "pwd",
+    "token",
+    "secret",
+    "ssn",
+    "api_key",
+    "salt",
 ]
 
 SENSITIVE_PREFIXES = ["encr_", "stripe_", "bank_"]
@@ -39,10 +42,7 @@ class SchemaInspector:
 
     def strip_sensitive_columns(self, schema: dict[str, list[str]]) -> dict[str, list[str]]:
         """Remove columns matching sensitive patterns."""
-        return {
-            table: [col for col in columns if not self._is_sensitive(col)]
-            for table, columns in schema.items()
-        }
+        return {table: [col for col in columns if not self._is_sensitive(col)] for table, columns in schema.items()}
 
     def format_for_prompt(self, schema: dict[str, list[str]]) -> str:
         """Format schema as CREATE TABLE statements for LLM context."""

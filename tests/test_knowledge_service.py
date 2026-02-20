@@ -1,7 +1,5 @@
-import pytest
-
-from app.services.knowledge_service import KnowledgeService
 from app.models.knowledge_entry import KnowledgeEntry
+from app.services.knowledge_service import KnowledgeService
 
 
 async def test_load_and_format_entries(db_session):
@@ -52,7 +50,9 @@ async def test_inactive_entries_excluded(db_session):
     await db_session.flush()
 
     active = KnowledgeEntry(project_id=project.id, category="faq", title="Active", content="Visible")
-    inactive = KnowledgeEntry(project_id=project.id, category="faq", title="Inactive", content="Hidden", is_active=False)
+    inactive = KnowledgeEntry(
+        project_id=project.id, category="faq", title="Inactive", content="Hidden", is_active=False
+    )
     db_session.add_all([active, inactive])
     await db_session.flush()
 

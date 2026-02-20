@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel
@@ -12,7 +12,9 @@ openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
 MODEL = "gpt-4o-mini"
 MAX_HISTORY_MESSAGES = 10
 
-SYSTEM_PROMPT_TEMPLATE = """You are a helpful admin assistant chatbot. You help administrators query their database and navigate their admin panel.
+SYSTEM_PROMPT_TEMPLATE = """\
+You are a helpful admin assistant chatbot. \
+You help administrators query their database and navigate their admin panel.
 
 ## Classification Rules
 - If the question asks for counts, totals, lists, or specific records, classify as "data".
@@ -43,9 +45,7 @@ class LLMService:
     def __init__(self, model: str = MODEL):
         self.model = model
 
-    def _cap_history(
-        self, history: list[dict], max_messages: int = MAX_HISTORY_MESSAGES
-    ) -> list[dict]:
+    def _cap_history(self, history: list[dict], max_messages: int = MAX_HISTORY_MESSAGES) -> list[dict]:
         if len(history) <= max_messages:
             return history
         return history[-max_messages:]

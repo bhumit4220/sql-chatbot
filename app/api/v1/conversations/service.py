@@ -57,21 +57,14 @@ class ConversationService:
         await session.flush()
         return msg
 
-    async def get_history(
-        self, session: AsyncSession, conversation_id: int, limit: int = 10
-    ) -> list[dict]:
+    async def get_history(self, session: AsyncSession, conversation_id: int, limit: int = 10) -> list[dict]:
         result = await session.execute(
-            select(Message)
-            .where(Message.conversation_id == conversation_id)
-            .order_by(Message.id.desc())
-            .limit(limit)
+            select(Message).where(Message.conversation_id == conversation_id).order_by(Message.id.desc()).limit(limit)
         )
         messages = list(reversed(result.scalars().all()))
         return [{"role": m.role, "content": m.content} for m in messages]
 
-    async def get_messages_by_udid(
-        self, session: AsyncSession, conversation_udid: str, project_id: int
-    ) -> list[dict]:
+    async def get_messages_by_udid(self, session: AsyncSession, conversation_udid: str, project_id: int) -> list[dict]:
         result = await session.execute(
             select(Conversation).where(
                 Conversation.udid == conversation_udid,
@@ -83,9 +76,7 @@ class ConversationService:
             return []
 
         msg_result = await session.execute(
-            select(Message)
-            .where(Message.conversation_id == conv.id)
-            .order_by(Message.id)
+            select(Message).where(Message.conversation_id == conv.id).order_by(Message.id)
         )
         messages = msg_result.scalars().all()
         return [

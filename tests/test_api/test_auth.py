@@ -1,4 +1,3 @@
-import pytest
 from app.api.v1.auth.service import authenticate_admin
 from app.core.security import hash_password
 from app.models.admin import Admin

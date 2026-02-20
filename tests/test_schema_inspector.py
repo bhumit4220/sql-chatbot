@@ -1,4 +1,3 @@
-import pytest
 from app.services.schema_inspector import SchemaInspector
 
 

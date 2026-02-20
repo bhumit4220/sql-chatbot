@@ -1,5 +1,6 @@
 import pytest
-from app.api.v1.knowledge.service import create_entry, list_entries, get_entry, update_entry, delete_entry
+
+from app.api.v1.knowledge.service import create_entry, delete_entry, get_entry, list_entries, update_entry
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.security import hash_password
 from app.models.admin import Admin
@@ -26,7 +27,11 @@ async def test_create_entry(db_session, project):
 
 async def test_create_entry_with_tags(db_session, project):
     entry = await create_entry(
-        db_session, project.id, "faq", "Reset Password", "Click forgot password",
+        db_session,
+        project.id,
+        "faq",
+        "Reset Password",
+        "Click forgot password",
         tags=["auth", "password"],
     )
     assert entry.tags is not None

@@ -24,8 +24,14 @@ async def create_entry(
 ):
     await _verify_project_access(project_id, admin, session)
     entry = await service.create_entry(
-        session, project_id, body.category, body.title, body.content,
-        body.url, body.tags, body.sort_order,
+        session,
+        project_id,
+        body.category,
+        body.title,
+        body.content,
+        body.url,
+        body.tags,
+        body.sort_order,
     )
     await session.commit()
     return entry
@@ -69,9 +75,16 @@ async def update_entry(
 ):
     await _verify_project_access(project_id, admin, session)
     entry = await service.update_entry(
-        session, project_id, entry_id,
-        category=body.category, title=body.title, content=body.content,
-        url=body.url, tags=body.tags, sort_order=body.sort_order, is_active=body.is_active,
+        session,
+        project_id,
+        entry_id,
+        category=body.category,
+        title=body.title,
+        content=body.content,
+        url=body.url,
+        tags=body.tags,
+        sort_order=body.sort_order,
+        is_active=body.is_active,
     )
     await session.commit()
     return entry

@@ -14,6 +14,4 @@ class Conversation(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"))
     session_id: Mapped[str] = mapped_column(String(64), index=True)
     started_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[str] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
+    updated_at: Mapped[str] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

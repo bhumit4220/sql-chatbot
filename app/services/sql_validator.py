@@ -1,8 +1,8 @@
 import re
 from dataclasses import dataclass
 
-import sqlparse
 import sqlglot
+import sqlparse
 from sqlglot import exp
 
 
@@ -14,17 +14,41 @@ class SqlValidationResult:
 
 
 BLOCKED_KEYWORDS = {
-    "INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE", "ALTER", "CREATE",
-    "GRANT", "REVOKE", "EXECUTE", "COPY", "PREPARE", "DO", "SET ROLE", "SET SESSION",
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "DROP",
+    "TRUNCATE",
+    "ALTER",
+    "CREATE",
+    "GRANT",
+    "REVOKE",
+    "EXECUTE",
+    "COPY",
+    "PREPARE",
+    "DO",
+    "SET ROLE",
+    "SET SESSION",
 }
 
 BLOCKED_FUNCTIONS = {
-    "pg_read_file", "pg_ls_dir", "pg_stat_file", "dblink", "lo_import", "lo_export",
-    "pg_terminate_backend", "pg_cancel_backend", "pg_sleep", "current_setting",
+    "pg_read_file",
+    "pg_ls_dir",
+    "pg_stat_file",
+    "dblink",
+    "lo_import",
+    "lo_export",
+    "pg_terminate_backend",
+    "pg_cancel_backend",
+    "pg_sleep",
+    "current_setting",
 }
 
 BLOCKED_CATALOGS = {
-    "pg_stat_activity", "pg_roles", "pg_shadow", "pg_authid",
+    "pg_stat_activity",
+    "pg_roles",
+    "pg_shadow",
+    "pg_authid",
 }
 
 MAX_LIMIT = 500
@@ -45,13 +69,15 @@ class SqlValidator:
             return SqlValidationResult(False, rejection_reason="Multiple statements detected")
         stmt = parsed[0]
         if stmt.get_type() != "SELECT":
-            return SqlValidationResult(False, rejection_reason=f"Statement type '{stmt.get_type()}' not allowed, only SELECT")
+            return SqlValidationResult(
+                False, rejection_reason=f"Statement type '{stmt.get_type()}' not allowed, only SELECT"
+            )
 
         # Layer 4: Keyword blocklist (uppercase check with word boundaries)
         sql_upper = sql.upper()
         for keyword in BLOCKED_KEYWORDS:
             if keyword in sql_upper:
-                if re.search(rf'\b{keyword}\b', sql_upper):
+                if re.search(rf"\b{keyword}\b", sql_upper):
                     return SqlValidationResult(False, rejection_reason=f"Blocked keyword: {keyword}")
 
         # Layer 4: Function blocklist
@@ -73,8 +99,14 @@ class SqlValidator:
 
         # Check for disallowed AST node types
         blocked_types = (
-            exp.Insert, exp.Update, exp.Delete, exp.Drop,
-            exp.Create, exp.Alter, exp.Grant, exp.Command,
+            exp.Insert,
+            exp.Update,
+            exp.Delete,
+            exp.Drop,
+            exp.Create,
+            exp.Alter,
+            exp.Grant,
+            exp.Command,
         )
         for node in ast.walk():
             if isinstance(node, blocked_types):

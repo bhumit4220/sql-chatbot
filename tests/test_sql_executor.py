@@ -1,6 +1,4 @@
-import pytest
-
-from app.services.sql_executor import SqlExecutor, SqlExecutionResult
+from app.services.sql_executor import SqlExecutor
 
 
 async def test_execute_returns_rows_and_columns(db_engine):

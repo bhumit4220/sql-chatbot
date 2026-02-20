@@ -1,13 +1,14 @@
 import pytest
+
 from app.api.v1.projects.service import (
-    create_project,
-    list_projects,
-    get_project,
-    update_project,
-    delete_project,
     create_api_key,
+    create_project,
+    delete_project,
+    get_project,
     list_api_keys,
+    list_projects,
     revoke_api_key,
+    update_project,
 )
 from app.core.exceptions import NotFoundError
 from app.core.security import hash_password

@@ -1,10 +1,9 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.main import app
 from app.core.security import hash_password
+from app.main import app
 from app.models.admin import Admin
-from app.models.base import Base
 
 
 @pytest.fixture
@@ -14,8 +13,9 @@ async def seeded_client(db_engine, db_session):
     db_session.add(admin)
     await db_session.commit()
 
-    from app.database import get_session
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from app.database import get_session
 
     session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
 

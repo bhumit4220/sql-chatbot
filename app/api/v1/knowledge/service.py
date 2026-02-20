@@ -1,11 +1,10 @@
 import json
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError, ValidationError
 from app.models.knowledge_entry import KnowledgeEntry
-
 
 MAX_ENTRIES_PER_PROJECT = 100
 

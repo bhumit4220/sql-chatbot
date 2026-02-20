@@ -1,20 +1,11 @@
 """Integration test: full chat flow with mocked OpenAI."""
 
-import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
-
-from app.main import app
-from app.cli import create_admin_in_db
-from app.api.v1.projects.service import create_project, create_api_key
 from app.api.v1.conversations.service import ConversationService
-from app.models.conversation import Conversation
-from app.models.message import Message
+from app.api.v1.projects.service import create_api_key, create_project
+from app.cli import create_admin_in_db
 from app.models.knowledge_entry import KnowledgeEntry
-from app.services.llm_service import SqlGenerationResult
 
 
 @pytest.fixture
@@ -57,8 +48,12 @@ async def test_conversation_service_full_flow(db_session, full_setup):
 
     # Save assistant response
     await service.save_message(
-        db_session, conv.id, "assistant", "There are 42 jobs.",
-        question_type="data", sql_query="SELECT count(*) FROM jobs",
+        db_session,
+        conv.id,
+        "assistant",
+        "There are 42 jobs.",
+        question_type="data",
+        sql_query="SELECT count(*) FROM jobs",
     )
 
     # Get history

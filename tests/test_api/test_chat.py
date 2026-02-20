@@ -1,7 +1,7 @@
 import pytest
 
 from app.api.v1.conversations.service import ConversationService
-from app.core.security import hash_password, hash_api_key
+from app.core.security import hash_api_key, hash_password
 from app.models.admin import Admin
 from app.models.api_key import ApiKey
 from app.models.project import Project
@@ -40,9 +40,7 @@ def conv_service():
 
 async def test_create_conversation(db_session, project_setup, conv_service):
     project, _ = project_setup
-    conv = await conv_service.get_or_create_conversation(
-        db_session, project.id, session_id="sess-1"
-    )
+    conv = await conv_service.get_or_create_conversation(db_session, project.id, session_id="sess-1")
     assert conv.id is not None
     assert conv.udid is not None
     assert conv.project_id == project.id
@@ -51,9 +49,7 @@ async def test_create_conversation(db_session, project_setup, conv_service):
 
 async def test_get_existing_conversation_by_udid(db_session, project_setup, conv_service):
     project, _ = project_setup
-    conv1 = await conv_service.get_or_create_conversation(
-        db_session, project.id, session_id="sess-2"
-    )
+    conv1 = await conv_service.get_or_create_conversation(db_session, project.id, session_id="sess-2")
     conv2 = await conv_service.get_or_create_conversation(
         db_session, project.id, session_id="sess-2", conversation_udid=conv1.udid
     )
@@ -62,14 +58,16 @@ async def test_get_existing_conversation_by_udid(db_session, project_setup, conv
 
 async def test_save_and_get_messages(db_session, project_setup, conv_service):
     project, _ = project_setup
-    conv = await conv_service.get_or_create_conversation(
-        db_session, project.id, session_id="sess-3"
-    )
+    conv = await conv_service.get_or_create_conversation(db_session, project.id, session_id="sess-3")
 
     await conv_service.save_message(db_session, conv.id, "user", "How many jobs?")
     await conv_service.save_message(
-        db_session, conv.id, "assistant", "There are 42 jobs.",
-        question_type="data", sql_query="SELECT count(*) FROM jobs",
+        db_session,
+        conv.id,
+        "assistant",
+        "There are 42 jobs.",
+        question_type="data",
+        sql_query="SELECT count(*) FROM jobs",
     )
 
     history = await conv_service.get_history(db_session, conv.id)
@@ -81,9 +79,7 @@ async def test_save_and_get_messages(db_session, project_setup, conv_service):
 
 async def test_get_history_capped_at_limit(db_session, project_setup, conv_service):
     project, _ = project_setup
-    conv = await conv_service.get_or_create_conversation(
-        db_session, project.id, session_id="sess-4"
-    )
+    conv = await conv_service.get_or_create_conversation(db_session, project.id, session_id="sess-4")
 
     for i in range(15):
         await conv_service.save_message(db_session, conv.id, "user", f"msg {i}")
@@ -96,9 +92,7 @@ async def test_get_history_capped_at_limit(db_session, project_setup, conv_servi
 
 async def test_get_messages_by_udid(db_session, project_setup, conv_service):
     project, _ = project_setup
-    conv = await conv_service.get_or_create_conversation(
-        db_session, project.id, session_id="sess-5"
-    )
+    conv = await conv_service.get_or_create_conversation(db_session, project.id, session_id="sess-5")
     await conv_service.save_message(db_session, conv.id, "user", "Hello")
     await conv_service.save_message(db_session, conv.id, "assistant", "Hi!")
 

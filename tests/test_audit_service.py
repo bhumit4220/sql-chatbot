@@ -1,12 +1,12 @@
 import pytest
-
-from app.services.audit_service import AuditService
-from app.models.audit_log import AuditLog
-from app.models.admin import Admin
-from app.models.project import Project
-from app.models.api_key import ApiKey
-from app.core.security import hash_password, hash_api_key
 from sqlalchemy import select
+
+from app.core.security import hash_api_key, hash_password
+from app.models.admin import Admin
+from app.models.api_key import ApiKey
+from app.models.audit_log import AuditLog
+from app.models.project import Project
+from app.services.audit_service import AuditService
 
 
 @pytest.fixture

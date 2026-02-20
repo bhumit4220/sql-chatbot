@@ -1,10 +1,10 @@
 from app.core.exceptions import (
+    AuthenticationError,
+    BudgetExceededError,
     ChatbotException,
     NotFoundError,
-    AuthenticationError,
-    ValidationError,
     RateLimitError,
-    BudgetExceededError,
+    ValidationError,
 )
 
 

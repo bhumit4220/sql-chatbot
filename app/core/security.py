@@ -1,5 +1,5 @@
 import hashlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 from cryptography.fernet import Fernet
@@ -23,7 +23,7 @@ def hash_api_key(key: str) -> str:
 def create_jwt_token(subject: str, expire_minutes: int | None = None) -> str:
     if expire_minutes is None:
         expire_minutes = settings.jwt_expire_minutes
-    expire = datetime.now(timezone.utc) + timedelta(minutes=expire_minutes)
+    expire = datetime.now(UTC) + timedelta(minutes=expire_minutes)
     return jwt.encode(
         {"sub": subject, "exp": expire},
         settings.jwt_secret_key,
@@ -39,7 +39,8 @@ def decode_jwt_token(token: str) -> dict:
 
 
 def _get_fernet() -> Fernet:
-    return Fernet(settings.encryption_key.encode() if isinstance(settings.encryption_key, str) else settings.encryption_key)
+    key = settings.encryption_key
+    return Fernet(key.encode() if isinstance(key, str) else key)
 
 
 def encrypt_connection_string(plain: str) -> str:

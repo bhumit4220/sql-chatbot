@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import AsyncMock
 
 from app.core.rate_limiter import RateLimiter

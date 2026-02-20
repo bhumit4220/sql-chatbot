@@ -1,5 +1,3 @@
-import pytest
-
 from app.cli import create_admin_in_db
 from app.core.security import verify_password
 

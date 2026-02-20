@@ -3,9 +3,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import settings
 from app.api.v1.router import router as v1_router
 from app.api.v1.widget.router import router as widget_router
+from app.config import settings
 from app.core.exceptions import ChatbotException, chatbot_exception_handler
 from app.core.logging import setup_logging
 
