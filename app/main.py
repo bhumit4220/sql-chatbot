@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.api.v1.router import router as v1_router
+from app.api.v1.widget.router import router as widget_router
 from app.core.exceptions import ChatbotException, chatbot_exception_handler
 from app.core.logging import setup_logging
 
@@ -27,6 +28,7 @@ app.add_middleware(
 
 app.add_exception_handler(ChatbotException, chatbot_exception_handler)
 app.include_router(v1_router)
+app.include_router(widget_router)
 
 
 @app.get("/health")
