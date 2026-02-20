@@ -18,6 +18,28 @@ from app.services.sql_validator import SqlValidator
 from app.services.tenant_db import tenant_db_manager
 
 router = APIRouter(tags=["chat"])
+
+
+def format_page_context(ctx) -> str:
+    """Format widget page context for LLM prompt injection."""
+    if not ctx:
+        return "(No page context available — widget may not be sending page info)"
+
+    lines = []
+    if ctx.url:
+        title = ctx.title or "Unknown page"
+        lines.append(f"The admin is currently on: {title} ({ctx.url})")
+    if ctx.heading:
+        lines.append(f"Page heading: {ctx.heading}")
+
+    if ctx.navigation:
+        lines.append("\nAvailable Admin Pages:")
+        for nav in ctx.navigation[:80]:  # cap at 80 items
+            lines.append(f"- {nav.text} → {nav.href}")
+    else:
+        lines.append("\n(No navigation links detected on this page)")
+
+    return "\n".join(lines)
 llm_service = LLMService()
 sql_executor = SqlExecutor()
 schema_inspector = SchemaInspector()
@@ -49,6 +71,9 @@ async def chat_stream(
             schema_text = schema_inspector.format_for_prompt(stripped)
             project.schema_cache = schema_text
             await session.commit()
+
+        # Format page context from widget (used in Phase 7 when LLM gets updated)
+        page_context_text = format_page_context(body.page_context)
 
         # Load knowledge base
         knowledge_text = await knowledge_service.load_for_prompt(session, project.id)
