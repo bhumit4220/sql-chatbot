@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.auth.dependencies import get_current_admin
 from app.api.v1.knowledge import schemas, service
+from app.api.v1.knowledge.semantic_schemas import SemanticContextImport, SemanticContextImportResponse
 from app.api.v1.projects.service import get_project
 from app.database import get_session
 from app.models.admin import Admin
@@ -90,6 +91,19 @@ async def update_entry(
     )
     await session.commit()
     return entry
+
+
+@router.post("/semantic-context", response_model=SemanticContextImportResponse, status_code=201)
+async def import_semantic_context_endpoint(
+    project_id: int,
+    body: SemanticContextImport,
+    admin: Admin = Depends(get_current_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    await _verify_project_access(project_id, admin, session)
+    result = await service.import_semantic_context(session, project_id, body)
+    await session.commit()
+    return result
 
 
 @router.delete("/{entry_id}", status_code=204)

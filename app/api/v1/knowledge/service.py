@@ -113,3 +113,96 @@ async def delete_entry(session: AsyncSession, project_id: int, entry_id: int) ->
     entry = await get_entry(session, project_id, entry_id)
     await session.delete(entry)
     await session.flush()
+
+
+SEMANTIC_CATEGORIES = {"enum_mapping", "business_rule", "column_description",
+                       "metric_definition", "verified_query"}
+
+
+async def import_semantic_context(
+    session: AsyncSession,
+    project_id: int,
+    payload,
+) -> dict:
+    # Delete existing semantic entries (replace strategy)
+    result = await session.execute(
+        select(KnowledgeEntry).where(
+            KnowledgeEntry.project_id == project_id,
+            KnowledgeEntry.category.in_(SEMANTIC_CATEGORIES),
+        )
+    )
+    existing = result.scalars().all()
+    deleted_count = len(existing)
+    for entry in existing:
+        await session.delete(entry)
+    await session.flush()
+
+    entries = []
+    sort = 0
+
+    for item in (payload.enum_mappings or []):
+        mapping_text = ", ".join(f"{k}={v}" for k, v in item.mappings.items())
+        content = f"{item.table}.{item.column}: {mapping_text}"
+        if item.description:
+            content += f"\n{item.description}"
+        entries.append(KnowledgeEntry(
+            project_id=project_id, category="enum_mapping",
+            title=f"{item.table}.{item.column} enum values",
+            content=content, sort_order=sort,
+            metadata_json={"table": item.table, "column": item.column, "mappings": item.mappings},
+        ))
+        sort += 1
+
+    for item in (payload.column_descriptions or []):
+        content = f"{item.table}.{item.column}: {item.description}"
+        if item.synonyms:
+            content += f"\nSynonyms: {', '.join(item.synonyms)}"
+        entries.append(KnowledgeEntry(
+            project_id=project_id, category="column_description",
+            title=f"{item.table}.{item.column}",
+            content=content, sort_order=sort,
+            metadata_json={"table": item.table, "column": item.column, "synonyms": item.synonyms},
+        ))
+        sort += 1
+
+    for item in (payload.business_rules or []):
+        content = item.rule
+        if item.sql_filter:
+            content += f"\nSQL filter: {item.sql_filter}"
+        if item.tables:
+            content += f"\nApplies to: {', '.join(item.tables)}"
+        entries.append(KnowledgeEntry(
+            project_id=project_id, category="business_rule",
+            title=item.title, content=content, sort_order=sort,
+            metadata_json={"tables": item.tables, "sql_filter": item.sql_filter},
+        ))
+        sort += 1
+
+    for item in (payload.metric_definitions or []):
+        content = f"{item.name}: {item.description}\nSQL: {item.sql_expression}"
+        entries.append(KnowledgeEntry(
+            project_id=project_id, category="metric_definition",
+            title=item.name, content=content, sort_order=sort,
+            metadata_json={"sql_expression": item.sql_expression, "tables": item.tables},
+        ))
+        sort += 1
+
+    for item in (payload.verified_queries or []):
+        content = f"Q: {item.question}\nSQL: {item.sql}"
+        if item.explanation:
+            content += f"\n{item.explanation}"
+        entries.append(KnowledgeEntry(
+            project_id=project_id, category="verified_query",
+            title=item.question[:255], content=content, sort_order=sort,
+            metadata_json={"sql": item.sql, "question": item.question},
+        ))
+        sort += 1
+
+    session.add_all(entries)
+    await session.flush()
+
+    categories = {}
+    for e in entries:
+        categories[e.category] = categories.get(e.category, 0) + 1
+
+    return {"created_count": len(entries), "deleted_count": deleted_count, "categories": categories}
