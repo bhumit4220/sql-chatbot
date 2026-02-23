@@ -32,6 +32,7 @@ async def create_entry(
         body.url,
         body.tags,
         body.sort_order,
+        body.metadata_json,
     )
     await session.commit()
     return entry
@@ -85,6 +86,7 @@ async def update_entry(
         tags=body.tags,
         sort_order=body.sort_order,
         is_active=body.is_active,
+        metadata_json=body.metadata_json,
     )
     await session.commit()
     return entry

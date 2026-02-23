@@ -18,6 +18,7 @@ async def create_entry(
     url: str | None = None,
     tags: list[str] | None = None,
     sort_order: int = 0,
+    metadata_json: dict | None = None,
 ) -> KnowledgeEntry:
     count_result = await session.execute(
         select(func.count()).select_from(KnowledgeEntry).where(KnowledgeEntry.project_id == project_id)
@@ -34,6 +35,7 @@ async def create_entry(
         url=url,
         tags=json.dumps(tags) if tags else None,
         sort_order=sort_order,
+        metadata_json=metadata_json,
     )
     session.add(entry)
     await session.flush()
@@ -84,6 +86,7 @@ async def update_entry(
     tags: list[str] | None = None,
     sort_order: int | None = None,
     is_active: bool | None = None,
+    metadata_json: dict | None = None,
 ) -> KnowledgeEntry:
     entry = await get_entry(session, project_id, entry_id)
     if category is not None:
@@ -100,6 +103,8 @@ async def update_entry(
         entry.sort_order = sort_order
     if is_active is not None:
         entry.is_active = is_active
+    if metadata_json is not None:
+        entry.metadata_json = metadata_json
     await session.flush()
     return entry
 
