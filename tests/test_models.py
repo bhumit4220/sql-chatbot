@@ -96,3 +96,26 @@ async def test_create_audit_log(db_session):
     db_session.add(log)
     await db_session.flush()
     assert log.id is not None
+
+
+async def test_knowledge_entry_with_metadata_json(db_session):
+    admin = Admin(email="meta@test.com", password_hash="h", role="owner")
+    db_session.add(admin)
+    await db_session.flush()
+    project = Project(name="Meta", connection_string_encrypted="e", owner_admin_id=admin.id)
+    db_session.add(project)
+    await db_session.flush()
+
+    entry = KnowledgeEntry(
+        project_id=project.id,
+        category="enum_mapping",
+        title="Status Enum",
+        content="1=Active, 3=Deleted",
+        metadata_json={"table": "contractors", "column": "status", "mappings": {"1": "Active", "3": "Deleted"}},
+    )
+    db_session.add(entry)
+    await db_session.flush()
+
+    assert entry.id is not None
+    assert entry.metadata_json["table"] == "contractors"
+    assert entry.metadata_json["mappings"]["1"] == "Active"

@@ -23,8 +23,12 @@ def anyio_backend():
 @pytest.fixture
 async def db_engine():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    # Exclude tables with PostgreSQL-specific types (JSONB, Vector) that SQLite can't handle
+    sqlite_tables = [
+        t for t in Base.metadata.sorted_tables if t.name != "schema_documents"
+    ]
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(Base.metadata.create_all, tables=sqlite_tables)
     yield engine
     await engine.dispose()
 
