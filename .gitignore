@@ -27,3 +27,4 @@ widget/dist/
 *.swp
 *.swo
 *~
+.worktrees/
