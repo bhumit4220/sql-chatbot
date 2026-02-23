@@ -157,7 +157,14 @@ class LLMService:
                 "Use the page context to know where the admin is.\n"
                 f"Current date and time: {current_dt}\n\n"
                 f"## Current Page Context\n{page_context_text}\n\n"
-                f"## Query Results\n{context}"
+                f"## Query Results\n{context}\n\n"
+                "## Answer Rules\n"
+                "- Give a direct, human-friendly answer — e.g. 'There are 40,379 customers'\n"
+                "- NEVER mention SQL queries, column names, status codes, table names, or database internals\n"
+                "- NEVER explain HOW you got the number (no 'status != 3', no 'WHERE clause', no 'the query counts...')\n"
+                "- Use business language: say 'active' not 'status = 1', say 'excluding deleted' not 'status != 3'\n"
+                "- If the result is a number, just state it. If it's a list, format it as a readable table or bullet points\n"
+                "- Keep answers to 1-2 sentences unless the data warrants more detail"
             )
         else:
             system = (
