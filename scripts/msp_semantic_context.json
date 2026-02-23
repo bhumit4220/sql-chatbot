@@ -148,6 +148,11 @@
       "rule": "An 'active' customer is one with status=1 (Active). Exclude deleted (status=3) by default.",
       "tables": ["customers"],
       "sql_filter": "status = 1"
+    },
+    {
+      "title": "Stale Cache Columns — Do Not Use",
+      "rule": "The columns 'completed_jobs', 'completed_jobs_count', 'total_earned', and similar denormalized cache columns on contractors and customers are STALE and contain NULL or 0 values. NEVER use these columns directly. Instead, always JOIN the jobs table and COUNT/SUM to get accurate numbers. For example, to count completed jobs per contractor: JOIN jobs ON contractors.id = jobs.contractor_id WHERE jobs.status IN (11, 28, 29) GROUP BY contractor.",
+      "tables": ["contractors", "customers"]
     }
   ],
   "verified_queries": [
@@ -175,6 +180,16 @@
       "question": "How many recurring jobs are there?",
       "sql": "SELECT COUNT(*) FROM jobs WHERE delivery_type = 2 AND status != 3",
       "explanation": "Recurring = delivery_type 2. Exclude deleted."
+    },
+    {
+      "question": "Which contractor has the most completed jobs?",
+      "sql": "SELECT c.first_name, c.last_name, COUNT(j.id) AS completed_jobs FROM contractors c JOIN jobs j ON c.id = j.contractor_id WHERE j.status IN (11, 28, 29) AND c.status = 1 GROUP BY c.id, c.first_name, c.last_name ORDER BY completed_jobs DESC LIMIT 10",
+      "explanation": "Must JOIN jobs table and COUNT — do NOT use the stale completed_jobs column on contractors."
+    },
+    {
+      "question": "Show me the last 5 cancelled jobs",
+      "sql": "SELECT j.id, jt.title AS job_type, CONCAT(cu.first_name, ' ', cu.last_name) AS customer, CONCAT(co.first_name, ' ', co.last_name) AS contractor, j.created_at, j.bid_amount FROM jobs j LEFT JOIN job_types jt ON j.job_type_id = jt.id LEFT JOIN customers cu ON j.created_by = cu.id LEFT JOIN contractors co ON j.contractor_id = co.id WHERE j.status = 12 ORDER BY j.updated_at DESC LIMIT 5",
+      "explanation": "Cancelled = status 12. JOIN for customer name (via created_by FK), contractor name, and job type name."
     }
   ]
 }

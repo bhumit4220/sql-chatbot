@@ -152,6 +152,7 @@ async def chat_stream(
 
         context = ""
         final_sql = sql_result.sql_query
+        logger.info("LLM type=%s SQL=%s", sql_result.question_type, (final_sql or "")[:300])
 
         if sql_result.question_type == "data":
             # Multi-step exploration: if LLM needs to explore first
