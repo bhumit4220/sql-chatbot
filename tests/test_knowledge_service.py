@@ -99,8 +99,43 @@ async def test_entries_sorted_by_category_and_order(db_session):
 
     service = KnowledgeService()
     formatted = await service.load_for_prompt(db_session, project.id)
-    # Navigation should come before workflow (alphabetical category), and within workflow, sort_order respected
+    # Navigation comes before workflow in CATEGORY_ORDER, and within workflow, sort_order respected
     nav_pos = formatted.index("First Nav")
-    wf_first_pos = formatted.index("[workflow] First")
-    wf_second_pos = formatted.index("[workflow] Second")
+    wf_first_pos = formatted.index("**First**")
+    wf_second_pos = formatted.index("**Second**")
     assert nav_pos < wf_first_pos < wf_second_pos
+
+
+async def test_semantic_entries_grouped_and_ordered(db_session):
+    from app.models.admin import Admin
+    from app.models.project import Project
+
+    admin = Admin(email="fmt@test.com", password_hash="h", role="owner")
+    db_session.add(admin)
+    await db_session.flush()
+    project = Project(name="Fmt", connection_string_encrypted="e", owner_admin_id=admin.id)
+    db_session.add(project)
+    await db_session.flush()
+
+    entries = [
+        KnowledgeEntry(project_id=project.id, category="navigation", title="Dashboard", content="/admin"),
+        KnowledgeEntry(project_id=project.id, category="enum_mapping", title="Status", content="1=Active, 3=Deleted"),
+        KnowledgeEntry(project_id=project.id, category="business_rule", title="Soft Delete", content="Exclude status=3"),
+        KnowledgeEntry(project_id=project.id, category="verified_query", title="Active count", content="Q: How many active?\nSQL: SELECT COUNT(*) FROM contractors WHERE status = 1"),
+    ]
+    db_session.add_all(entries)
+    await db_session.flush()
+
+    service = KnowledgeService()
+    formatted = await service.load_for_prompt(db_session, project.id)
+
+    # Semantic categories appear before navigation
+    enum_pos = formatted.index("Enum / Status Value Mappings")
+    rule_pos = formatted.index("Business Rules & Default Filters")
+    query_pos = formatted.index("Verified Question-SQL Examples")
+    nav_pos = formatted.index("Navigation Help")
+    assert enum_pos < rule_pos < query_pos < nav_pos
+
+    # Content is present with bold titles
+    assert "**Status**" in formatted
+    assert "1=Active" in formatted
