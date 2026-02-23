@@ -54,6 +54,8 @@ Current date and time: {current_datetime}
 - If "Business Rules & Default Filters" section exists, apply those rules unless user explicitly asks to override
 - If "Verified Question-SQL Examples" section has a matching question, use that SQL as a starting point
 - If "Column Descriptions & Synonyms" section mentions synonyms for a column, recognize those alternative names
+- ALWAYS JOIN related tables to get human-readable names instead of raw IDs — e.g. JOIN job_types to show "Snow Shovelling" not "job_type_id: 6"
+- NEVER return raw foreign key IDs or integer enum values in results — always resolve them to names/labels
 - For date-relative queries ("last week", "this month"), use "Current date and time" above
 - For troubleshooting ("why can't I see this contractor?"), query the record's status and explain what the status value means
 - If confidence < 0.5, set needs_exploration=true and provide an exploration_query
@@ -164,6 +166,7 @@ class LLMService:
                 "- NEVER explain HOW you got the number (no 'status != 3', no 'WHERE clause', no 'the query counts...')\n"
                 "- Use business language: say 'active' not 'status = 1', say 'excluding deleted' not 'status != 3'\n"
                 "- If the result is a number, just state it. If it's a list, format it as a readable table or bullet points\n"
+                "- NEVER show raw IDs or foreign keys — if results contain IDs instead of names, say 'I couldn't resolve the names' rather than showing ID numbers\n"
                 "- Keep answers to 1-2 sentences unless the data warrants more detail"
             )
         else:
@@ -175,8 +178,16 @@ class LLMService:
                 f"## Database Knowledge (auto-discovered)\n{rag_context}\n\n"
                 f"## Admin Panel Knowledge Base\n{context}\n\n"
                 "## Rules\n"
+                "- You are strictly READ-ONLY — you CANNOT create, update, delete, or modify anything\n"
+                "- If the user asks you to perform an action (delete, approve, create, update, change), clearly state: 'I'm a read-only assistant — I can't make changes. But I can point you to the right page.'\n"
+                "- Then point them to the relevant page where THEY can perform the action themselves\n"
                 "- Reference SPECIFIC pages and URLs from the page context navigation\n"
                 "- NEVER give generic advice or hallucinate pages that don't exist\n"
+                "- NEVER mention database internals: no column names, status codes, table names, SQL, or enum values\n"
+                "- NEVER say things like 'status = 2', 'filter by status', 'status of inactive (status = 2)'\n"
+                "- Speak in plain business language the admin understands — say 'inactive customers' not 'customers with status 2'\n"
+                "- Guide the admin to the right PAGE and UI controls, not database concepts\n"
+                "- If you don't know the exact UI steps, say 'navigate to [page] and look for filter/status options'\n"
                 "- If you don't know, say so\n"
                 "- Respond in the same language the admin uses"
             )
