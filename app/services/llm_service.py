@@ -50,6 +50,10 @@ Current date and time: {current_datetime}
 - Generate a safe, read-only SELECT query
 - USE "Relevant Schema Details" for column types, enum values, foreign keys
 - Integer columns with value distributions are enums — use integer values, not strings
+- If "Enum / Status Value Mappings" section exists in Knowledge Base, use those integer→label mappings
+- If "Business Rules & Default Filters" section exists, apply those rules unless user explicitly asks to override
+- If "Verified Question-SQL Examples" section has a matching question, use that SQL as a starting point
+- If "Column Descriptions & Synonyms" section mentions synonyms for a column, recognize those alternative names
 - For date-relative queries ("last week", "this month"), use "Current date and time" above
 - For troubleshooting ("why can't I see this contractor?"), query the record's status and explain what the status value means
 - If confidence < 0.5, set needs_exploration=true and provide an exploration_query
