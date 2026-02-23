@@ -1,0 +1,180 @@
+{
+  "enum_mappings": [
+    {
+      "table": "contractors",
+      "column": "status",
+      "mappings": {
+        "1": "Active",
+        "2": "Inactive",
+        "3": "Deleted",
+        "4": "Verified",
+        "5": "Unverified",
+        "6": "Pending",
+        "13": "Suspended",
+        "30": "DeleteRequested"
+      },
+      "description": "Shared status enum used across all models. 'Active' contractors are those currently available for work. Deleted (3) are soft-deleted and should be excluded by default."
+    },
+    {
+      "table": "customers",
+      "column": "status",
+      "mappings": {
+        "1": "Active",
+        "2": "Inactive",
+        "3": "Deleted",
+        "4": "Verified",
+        "5": "Unverified",
+        "6": "Pending",
+        "30": "DeleteRequested"
+      },
+      "description": "Same shared status enum. Active customers are registered and usable accounts."
+    },
+    {
+      "table": "jobs",
+      "column": "status",
+      "mappings": {
+        "1": "Active",
+        "2": "Inactive",
+        "3": "Deleted",
+        "6": "Pending",
+        "7": "Saved",
+        "8": "Accepted",
+        "9": "Started",
+        "10": "Paused",
+        "11": "Completed",
+        "12": "Canceled",
+        "13": "Suspended",
+        "14": "Escalated",
+        "15": "Disputed",
+        "16": "Finished",
+        "17": "Extended",
+        "18": "Resumed",
+        "19": "InQueue",
+        "20": "Rejected",
+        "21": "NotStarted",
+        "24": "Expired",
+        "25": "Resolved",
+        "28": "Closed",
+        "29": "Dropped"
+      },
+      "description": "Job lifecycle statuses. A job is considered 'completed/done' when status is IN (11=Completed, 28=Closed, 29=Dropped). Deleted (3) jobs are soft-deleted."
+    },
+    {
+      "table": "jobs",
+      "column": "delivery_type",
+      "mappings": {
+        "1": "One Time",
+        "2": "Recurring",
+        "3": "Scheduled"
+      },
+      "description": "How the job is delivered. One Time = single occurrence, Recurring = repeats on schedule, Scheduled = quoted job with set date."
+    },
+    {
+      "table": "jobs",
+      "column": "serv_type",
+      "mappings": {
+        "1": "Quoted",
+        "2": "Bid",
+        "3": "Hourly"
+      },
+      "description": "Service/pricing type. Column is abbreviated as 'serv_type' (not 'service_type'). Note: enum value is spelled 'Houlry' in code but means 'Hourly'."
+    },
+    {
+      "table": "customers",
+      "column": "login_type",
+      "mappings": {
+        "1": "Email",
+        "2": "Facebook",
+        "3": "Google",
+        "4": "Apple",
+        "5": "Admin Login"
+      },
+      "description": "How the customer registered/logs in."
+    },
+    {
+      "table": "contractors",
+      "column": "login_type",
+      "mappings": {
+        "1": "Email",
+        "2": "Facebook",
+        "3": "Google",
+        "4": "Apple",
+        "5": "Admin Login"
+      },
+      "description": "How the contractor registered/logs in."
+    }
+  ],
+  "column_descriptions": [
+    {
+      "table": "jobs",
+      "column": "created_by",
+      "description": "Foreign key to the customers table (customer who created the job). This is the customer FK — NOT a column called customer_id.",
+      "synonyms": ["customer_id", "customer"]
+    },
+    {
+      "table": "jobs",
+      "column": "serv_type",
+      "description": "Service/pricing type for the job (Quoted=1, Bid=2, Hourly=3). Abbreviated column name.",
+      "synonyms": ["service_type", "pricing_type"]
+    },
+    {
+      "table": "job_types",
+      "column": "title",
+      "description": "The name/label of the job type (e.g., 'Snow Shovelling', 'Lawn Mowing'). Use this column — not 'name'.",
+      "synonyms": ["name", "job_type_name"]
+    }
+  ],
+  "business_rules": [
+    {
+      "title": "Soft Delete Rule",
+      "rule": "All models use soft deletes via status=3 (Deleted). When counting or listing records, ALWAYS exclude status=3 unless the user explicitly asks for deleted records. This applies to: contractors, customers, jobs, properties, and all other tables with a status column.",
+      "tables": ["contractors", "customers", "jobs", "properties"],
+      "sql_filter": "status != 3"
+    },
+    {
+      "title": "Job Completion Statuses",
+      "rule": "A job is considered 'completed' or 'done' when its status is one of: 11 (Completed), 28 (Closed), or 29 (Dropped). When asked about completed jobs, use: status IN (11, 28, 29).",
+      "tables": ["jobs"],
+      "sql_filter": "status IN (11, 28, 29)"
+    },
+    {
+      "title": "Active Contractors Definition",
+      "rule": "An 'active' contractor is one with status=1 (Active) AND status != 3 (not deleted). Simply filtering status=1 is sufficient since status=1 and status=3 are mutually exclusive.",
+      "tables": ["contractors"],
+      "sql_filter": "status = 1"
+    },
+    {
+      "title": "Active Customers Definition",
+      "rule": "An 'active' customer is one with status=1 (Active). Exclude deleted (status=3) by default.",
+      "tables": ["customers"],
+      "sql_filter": "status = 1"
+    }
+  ],
+  "verified_queries": [
+    {
+      "question": "How many active contractors are there?",
+      "sql": "SELECT COUNT(*) FROM contractors WHERE status = 1",
+      "explanation": "Active = status 1. Excludes deleted (3), inactive (2), suspended (13), etc."
+    },
+    {
+      "question": "How many total customers are there?",
+      "sql": "SELECT COUNT(*) FROM customers WHERE status != 3",
+      "explanation": "Total customers excluding soft-deleted (status=3)."
+    },
+    {
+      "question": "How many completed snow shovelling jobs are there?",
+      "sql": "SELECT COUNT(*) FROM jobs j JOIN job_types jt ON j.job_type_id = jt.id WHERE j.status IN (11, 28, 29) AND jt.title ILIKE '%snow shovel%'",
+      "explanation": "Completed = status IN (11, 28, 29). Job type matched via job_types.title."
+    },
+    {
+      "question": "How many jobs are currently in progress?",
+      "sql": "SELECT COUNT(*) FROM jobs WHERE status IN (8, 9, 10, 18) AND status != 3",
+      "explanation": "In progress = Accepted (8), Started (9), Paused (10), Resumed (18)."
+    },
+    {
+      "question": "How many recurring jobs are there?",
+      "sql": "SELECT COUNT(*) FROM jobs WHERE delivery_type = 2 AND status != 3",
+      "explanation": "Recurring = delivery_type 2. Exclude deleted."
+    }
+  ]
+}
