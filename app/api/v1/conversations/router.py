@@ -187,6 +187,7 @@ async def chat_stream(
                 schema_dict = _parse_schema_text(project.schema_cache or schema_text)
                 validator = SqlValidator(schema=schema_dict, exclude_tables=exclude_tables)
                 validation = validator.validate(final_sql)
+                logger.info("Validation valid=%s", validation.is_valid)
 
                 if not validation.is_valid:
                     yield {
@@ -221,6 +222,7 @@ async def chat_stream(
                     return
 
                 context = _format_sql_results(validation.modified_sql, exec_result)
+                logger.info("Exec rows=%d", exec_result.total_row_count)
             else:
                 # data question but no SQL generated
                 context = "(No SQL query was generated for this question)"
@@ -316,6 +318,9 @@ def _format_sql_results(sql: str, exec_result) -> str:
     if exec_result.columns:
         lines.append("| " + " | ".join(exec_result.columns) + " |")
         lines.append("| " + " | ".join("---" for _ in exec_result.columns) + " |")
-        for row in exec_result.rows[:50]:  # Cap for LLM context
+        display_rows = exec_result.rows[:20]  # Cap for LLM context
+        for row in display_rows:
             lines.append("| " + " | ".join(str(row.get(c, "")) for c in exec_result.columns) + " |")
+        if exec_result.total_row_count > 20:
+            lines.append(f"\n(Showing 20 of {exec_result.total_row_count} total rows)")
     return "\n".join(lines)

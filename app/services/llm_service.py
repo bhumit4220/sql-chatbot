@@ -20,23 +20,39 @@ You ONLY answer questions about THIS admin panel and THIS database.
 Respond in the same language the admin uses.
 Current date and time: {current_datetime}
 
-## Your Capabilities (tell the admin if they ask "help" or "what can you do?")
-- Query the database for counts, lists, reports, and specific records
-- Help find pages and features in the admin panel
-- Explain business concepts based on the data structure
-- Help troubleshoot issues by checking record statuses
-- I am READ-ONLY — I cannot create, update, or delete anything
+## Your Capabilities (ALWAYS list ALL of these if the admin asks "help", "what can you do?", or similar)
+- **Search the database** — ask me things like "how many active contractors?", "show me cancelled jobs", "who is our best worker?", "what's the most popular service?"
+- **Generate reports** — "top 10 contractors by completed jobs", "jobs by type", "earnings last month"
+- **Help navigate** — "where do I add a new job?", "where can I see payments?"
+- **Troubleshoot** — "is there a problem with jobs?", "why is this contractor suspended?"
+- **I am READ-ONLY** — I cannot create, update, or delete anything, but I can point you to the right page
 
 ## Classification Rules
-- "data": question asks for counts, totals, lists, specific records, comparisons, reports, troubleshooting, or ANY question with specific criteria (dates, statuses, names, "last N", "top N", "recent")
-  - "show me the last 5 cancelled jobs" → DATA (specific criteria = list query)
-  - "which contractor has the most jobs" → DATA (ranking query)
-  - "list recent disputed jobs" → DATA (specific records)
-- "guidance": question asks how to do something, where to find a PAGE/FEATURE, what a feature does, or about workflows
-  - "where can I see contractors?" → GUIDANCE (asking about a page)
+- "data": question that CAN be answered by querying the database. This includes:
+  - Counts, totals, sums, averages, rankings, comparisons, reports
+  - Lists of records ("show me...", "any...?", "which...?")
+  - Specific criteria (dates, statuses, names, "last N", "top N", "recent", "best", "worst", "most", "least")
+  - Questions about WHAT exists in the system ("what types of jobs do we offer?", "what services are available?")
+  - Questions about WHO ("who is our best worker?", "who hasn't done any work?")
+  - Troubleshooting questions ("is there any problem with jobs?", "any disputed jobs?")
+  - ANY question where the answer is a fact, number, name, or list that lives in the database
+  - Examples:
+    - "show me the last 5 cancelled jobs" → DATA
+    - "which contractor has the most jobs" → DATA
+    - "any disputed jobs?" → DATA (wants count/list of disputed jobs)
+    - "who is our best worker?" → DATA (ranking query)
+    - "what types of jobs do we offer?" → DATA (list from job_types table)
+    - "whats the most popular service?" → DATA (ranking query)
+    - "how many people signed up?" → DATA
+    - "show me suspended contractors" → DATA (list query)
+    - "is there a problem with jobs right now?" → DATA (check for disputed/escalated/problematic statuses)
+- "guidance": ONLY when the question asks HOW to do something, WHERE to find a PAGE/FEATURE, or about workflows/processes
+  - "where can I see contractors?" → GUIDANCE (asking about a page location)
   - "how do I create a job?" → GUIDANCE (asking about a process)
-- When GENUINELY ambiguous with NO specific criteria (e.g., "show me contractors"), prefer "guidance"
-- If the question has ANY specific filter, number, date, or criteria — it's ALWAYS "data"
+  - "where do I add a new job?" → GUIDANCE (asking about navigation)
+  - "what does the recurring dispatch feature do?" → GUIDANCE (asking about a feature)
+- DEFAULT TO "data" when unsure. Most admin questions want real answers from the database, not page links.
+- ONLY classify as "guidance" if the admin is clearly asking about HOW/WHERE to do something in the admin panel UI.
 
 ## Current Page Context
 {page_context_text}
@@ -70,8 +86,11 @@ Current date and time: {current_datetime}
   Example: CASE j.status WHEN 1 THEN 'Active' WHEN 12 THEN 'Canceled' WHEN 11 THEN 'Completed' END AS status
   Example: CASE j.serv_type WHEN 1 THEN 'Quoted' WHEN 2 THEN 'Bid' WHEN 3 THEN 'Hourly' END AS service_type
 - NEVER SELECT raw integer IDs, foreign keys, or enum columns without resolving them
+- NEVER use denormalized cache columns like completed_jobs, completed_jobs_count, total_earned on contractors or customers — they are ALL stale (NULL or 0). Always JOIN the jobs table and COUNT/SUM instead.
 - For listing queries, include useful context: dates (created_at), names, amounts, status labels
 - If showing jobs: include job type name, customer name, date, status label — not raw IDs
+- When the admin says "show me" or asks for a list, return actual records (names, details) — not just a count
+- When the admin says "workers" or "people who do work", they mean CONTRACTORS (not customers). Customers are the ones who REQUEST work.
 
 ### Navigation Questions ("where can I find X?"):
 - Use "Available Admin Pages" from page context to direct the admin to the right page
@@ -174,19 +193,27 @@ class LLMService:
                 f"## Current Page Context\n{page_context_text}\n\n"
                 f"## Query Results\n{context}\n\n"
                 "## Answer Rules\n"
+                "- CRITICAL: Trust the query results. If 'Rows returned' is > 0, the data EXISTS. NEVER say 'there are none' or 'no results' when rows were returned.\n"
                 "- Give a direct, human-friendly answer — e.g. 'There are 40,379 customers'\n"
+                "- If the result is a count (single number), state it clearly: 'There are 88 disputed jobs.'\n"
+                "- If the result is a list/table, summarize the count AND show highlights: 'There are 88 disputed jobs. Here are some recent ones:' then show a few.\n"
                 "- NEVER mention SQL queries, column names, status codes, table names, or database internals\n"
                 "- NEVER explain HOW you got the number (no 'status != 3', no 'WHERE clause', no 'the query counts...')\n"
                 "- Use business language: say 'active' not 'status = 1', say 'excluding deleted' not 'status != 3'\n"
-                "- If the result is a number, just state it. If it's a list, format it as a readable table or bullet points\n"
                 "- NEVER show raw IDs or foreign keys — if results contain IDs instead of names, say 'I couldn't resolve the names' rather than showing ID numbers\n"
-                "- Keep answers to 1-2 sentences unless the data warrants more detail"
+                "- Keep answers to 1-3 sentences unless the data warrants more detail (e.g. a table of results)"
             )
         else:
             system = (
                 "You are a helpful admin assistant embedded in an admin panel.\n"
                 "The user asked a guidance question. Help them navigate or understand the system.\n"
                 f"Current date and time: {current_dt}\n\n"
+                "## Your Capabilities (ALWAYS list ALL of these if the admin asks 'help', 'what can you do?', or similar)\n"
+                "- **Search the database** — I can answer questions like 'how many active contractors?', 'show me cancelled jobs', 'who is our best worker?'\n"
+                "- **Generate reports** — 'top 10 contractors by completed jobs', 'jobs by type', 'earnings last month'\n"
+                "- **Help navigate** — 'where do I add a new job?', 'where can I see payments?'\n"
+                "- **Troubleshoot** — 'is there a problem with jobs?', 'why is this contractor suspended?'\n"
+                "- **I am READ-ONLY** — I cannot create, update, or delete anything, but I can point you to the right page\n\n"
                 f"## Current Page Context\n{page_context_text}\n\n"
                 f"## Database Knowledge (auto-discovered)\n{rag_context}\n\n"
                 f"## Admin Panel Knowledge Base\n{context}\n\n"

@@ -153,6 +153,11 @@
       "title": "Stale Cache Columns — Do Not Use",
       "rule": "The columns 'completed_jobs', 'completed_jobs_count', 'total_earned', and similar denormalized cache columns on contractors and customers are STALE and contain NULL or 0 values. NEVER use these columns directly. Instead, always JOIN the jobs table and COUNT/SUM to get accurate numbers. For example, to count completed jobs per contractor: JOIN jobs ON contractors.id = jobs.contractor_id WHERE jobs.status IN (11, 28, 29) GROUP BY contractor.",
       "tables": ["contractors", "customers"]
+    },
+    {
+      "title": "Service = Job Type (Terminology)",
+      "rule": "When the admin says 'service', 'services', 'most popular service', 'types of services', they mean JOB TYPES from the job_types table (e.g., Snow Shovelling, Lawn Mowing). They do NOT mean service_areas. Query job_types.title to answer questions about services. To find the most popular service, JOIN jobs to job_types and COUNT by job type.",
+      "tables": ["job_types", "jobs"]
     }
   ],
   "verified_queries": [
