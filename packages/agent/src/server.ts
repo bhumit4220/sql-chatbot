@@ -7,6 +7,7 @@ import { SessionManager } from './auth/session.js';
 import { authRoutes } from './routes/auth.js';
 import { setupRoutes } from './routes/setup.js';
 import { codeRoutes } from './routes/code.js';
+import { discoveryRoutes } from './routes/discovery.js';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -47,7 +48,7 @@ export async function buildServer() {
   // server.register(dbRoutes, { prefix: '/db' });
   // server.register(llmRoutes, { prefix: '/llm' });
   await server.register(codeRoutes, { prefix: '/code' });
-  // server.register(discoveryRoutes, { prefix: '/discovery' });
+  await server.register(discoveryRoutes, { prefix: '/discovery' });
 
   return server;
 }
