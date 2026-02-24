@@ -29,6 +29,9 @@ importers:
       fastify:
         specifier: ^5.7.4
         version: 5.7.4
+      openai:
+        specifier: ^6.24.0
+        version: 6.24.0
       pg:
         specifier: ^8.18.0
         version: 8.18.0
@@ -793,6 +796,18 @@ packages:
   on-exit-leak-free@2.1.2:
     resolution: {integrity: sha512-0eJJY6hXLGf1udHwfNftBqH+g73EU4B504nZeKpz1sYRKafAghwxEJunB2O7rDZkL4PGfsMVnTXZ2EjibbqcsA==}
     engines: {node: '>=14.0.0'}
+
+  openai@6.24.0:
+    resolution: {integrity: sha512-WLR+qki3S4c9ZHilR42GDTxEpTrMFeWfcFNg1RMELW0ZCCBJMDDlqVV+QQEM5KN2hjUyZu45QpgJmln/0ykFRg==}
+    hasBin: true
+    peerDependencies:
+      ws: ^8.18.0
+      zod: ^3.25 || ^4.0
+    peerDependenciesMeta:
+      ws:
+        optional: true
+      zod:
+        optional: true
 
   path-key@3.1.1:
     resolution: {integrity: sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==}
@@ -1659,6 +1674,8 @@ snapshots:
       big-integer: 1.6.52
 
   on-exit-leak-free@2.1.2: {}
+
+  openai@6.24.0: {}
 
   path-key@3.1.1: {}
 
