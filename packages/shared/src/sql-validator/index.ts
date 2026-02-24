@@ -1,4 +1,5 @@
-import { Parser } from 'node-sql-parser';
+import NodeSqlParser from 'node-sql-parser';
+const { Parser } = NodeSqlParser;
 import type { SqlValidationResult } from '../types/db.js';
 
 const MAX_LIMIT = 500;
