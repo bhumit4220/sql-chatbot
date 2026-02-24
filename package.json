@@ -1,0 +1,23 @@
+{
+  "name": "sql-chatbot-v2",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "build:shared": "pnpm --filter @chatbot/shared build",
+    "build:agent": "pnpm --filter @chatbot/agent build",
+    "build:extension": "pnpm --filter @chatbot/extension build",
+    "dev:agent": "pnpm --filter @chatbot/agent dev",
+    "dev:extension": "pnpm --filter @chatbot/extension dev",
+    "test": "pnpm -r test",
+    "test:agent": "pnpm --filter @chatbot/agent test",
+    "test:extension": "pnpm --filter @chatbot/extension test",
+    "clean": "pnpm -r exec rm -rf dist node_modules"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}
