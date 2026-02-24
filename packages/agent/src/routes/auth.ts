@@ -1,4 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
+import { createPool, closePool } from '../db/connection.js';
+import { initLLM } from '../routes/llm.js';
 
 export const authRoutes: FastifyPluginAsync = async (server) => {
   // GET /auth/status — no auth required
@@ -27,6 +29,12 @@ export const authRoutes: FastifyPluginAsync = async (server) => {
       return reply.status(401).send({ error: 'Invalid passphrase' });
     }
 
+    // Initialize DB pool and LLM engine with secrets from the vault
+    const dbUrl = vault.getSecret('dbUrl');
+    if (dbUrl) createPool(dbUrl);
+    const apiKey = vault.getSecret('llmApiKey');
+    if (apiKey) initLLM(apiKey);
+
     const origin = request.headers.origin || '';
     const session = sessionManager.createSession(origin);
 
@@ -41,6 +49,7 @@ export const authRoutes: FastifyPluginAsync = async (server) => {
   server.post('/lock', async () => {
     const vault = (server as any).vault;
     const sessionManager = (server as any).sessionManager;
+    await closePool();
     vault.lock();
     sessionManager.invalidateAll();
     return { locked: true };

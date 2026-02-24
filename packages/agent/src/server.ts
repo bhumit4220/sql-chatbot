@@ -8,6 +8,8 @@ import { authRoutes } from './routes/auth.js';
 import { setupRoutes } from './routes/setup.js';
 import { codeRoutes } from './routes/code.js';
 import { discoveryRoutes } from './routes/discovery.js';
+import { dbRoutes } from './routes/db.js';
+import { llmRoutes } from './routes/llm.js';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -45,8 +47,8 @@ export async function buildServer() {
   await server.register(setupRoutes, { prefix: '/setup' });
 
   // Protected routes
-  // server.register(dbRoutes, { prefix: '/db' });
-  // server.register(llmRoutes, { prefix: '/llm' });
+  await server.register(dbRoutes, { prefix: '/db' });
+  await server.register(llmRoutes, { prefix: '/llm' });
   await server.register(codeRoutes, { prefix: '/code' });
   await server.register(discoveryRoutes, { prefix: '/discovery' });
 
