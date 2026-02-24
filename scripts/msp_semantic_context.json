@@ -158,6 +158,11 @@
       "title": "Service = Job Type (Terminology)",
       "rule": "When the admin says 'service', 'services', 'most popular service', 'types of services', they mean JOB TYPES from the job_types table (e.g., Snow Shovelling, Lawn Mowing). They do NOT mean service_areas. Query job_types.title to answer questions about services. To find the most popular service, JOIN jobs to job_types and COUNT by job type.",
       "tables": ["job_types", "jobs"]
+    },
+    {
+      "title": "Jobs to Service Areas — Join Through Properties",
+      "rule": "Jobs connect to service areas THROUGH the properties table: jobs.property_id → properties.id, then properties.service_area_id → service_areas.id. To find which area has the most jobs, JOIN: jobs → properties → service_areas, then GROUP BY service_areas.title. The join_service_areas table is for pricing (maps job_types to service_areas) and does NOT have a job_id column — never use it to link individual jobs to areas.",
+      "tables": ["jobs", "properties", "service_areas", "job_service_areas"]
     }
   ],
   "verified_queries": [
@@ -195,6 +200,11 @@
       "question": "Show me the last 5 cancelled jobs",
       "sql": "SELECT j.id, jt.title AS job_type, CONCAT(cu.first_name, ' ', cu.last_name) AS customer, CONCAT(co.first_name, ' ', co.last_name) AS contractor, j.created_at, j.bid_amount FROM jobs j LEFT JOIN job_types jt ON j.job_type_id = jt.id LEFT JOIN customers cu ON j.created_by = cu.id LEFT JOIN contractors co ON j.contractor_id = co.id WHERE j.status = 12 ORDER BY j.updated_at DESC LIMIT 5",
       "explanation": "Cancelled = status 12. JOIN for customer name (via created_by FK), contractor name, and job type name."
+    },
+    {
+      "question": "Which area has the most jobs?",
+      "sql": "SELECT sa.title AS service_area, COUNT(j.id) AS job_count FROM jobs j JOIN properties p ON j.property_id = p.id JOIN service_areas sa ON p.service_area_id = sa.id WHERE j.status != 3 GROUP BY sa.title ORDER BY job_count DESC LIMIT 10",
+      "explanation": "Jobs connect to service areas through properties: jobs.property_id → properties.service_area_id → service_areas.id. Never use job_service_areas for this — it maps job_types to areas for pricing."
     }
   ]
 }
