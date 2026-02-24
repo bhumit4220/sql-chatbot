@@ -6,6 +6,7 @@ import { Vault } from './vault/index.js';
 import { SessionManager } from './auth/session.js';
 import { authRoutes } from './routes/auth.js';
 import { setupRoutes } from './routes/setup.js';
+import { codeRoutes } from './routes/code.js';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -42,10 +43,10 @@ export async function buildServer() {
   await server.register(authRoutes, { prefix: '/auth' });
   await server.register(setupRoutes, { prefix: '/setup' });
 
-  // Protected routes (added in later phases)
+  // Protected routes
   // server.register(dbRoutes, { prefix: '/db' });
   // server.register(llmRoutes, { prefix: '/llm' });
-  // server.register(codeRoutes, { prefix: '/code' });
+  await server.register(codeRoutes, { prefix: '/code' });
   // server.register(discoveryRoutes, { prefix: '/discovery' });
 
   return server;
