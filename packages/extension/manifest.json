@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "SQL Chatbot",
+  "version": "2.0.0",
+  "description": "AI-powered admin panel assistant — ask questions about your database and codebase",
+  "permissions": ["activeTab", "storage", "scripting"],
+  "background": {
+    "service_worker": "src/background/index.ts",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
