@@ -7,6 +7,7 @@ import { initApiKeyDb } from './db/api-keys.js';
 import { initOpenAI } from './llm/openai.js';
 import { classifyRoute } from './routes/classify.js';
 import { generateSqlRoute } from './routes/generate-sql.js';
+import { answerRoute } from './routes/answer.js';
 
 const app = express();
 const PORT = process.env.PORT || 3100;
@@ -25,7 +26,7 @@ app.use('/api/v1/', apiKeyAuth);
 // Routes
 app.post('/api/v1/classify', classifyRoute);
 app.post('/api/v1/generate-sql', generateSqlRoute);
-app.post('/api/v1/answer', (_req, res) => res.status(501).json({ error: 'Not implemented' }));
+app.post('/api/v1/answer', answerRoute);
 
 export function startServer() {
   const dbPath = process.env.API_KEYS_DB || './data/api-keys.sqlite3';
