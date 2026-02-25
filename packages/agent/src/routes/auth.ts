@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { createPool, closePool } from '../db/connection.js';
+import { createPool, closePool, getPool } from '../db/connection.js';
 import { initLLM } from '../routes/llm.js';
+import { runDiscovery } from '../discovery/pipeline.js';
 
 export const authRoutes: FastifyPluginAsync = async (server) => {
   // GET /auth/status — no auth required
@@ -31,11 +32,18 @@ export const authRoutes: FastifyPluginAsync = async (server) => {
 
     // Initialize DB pool and LLM engine with secrets from the vault
     const dbUrl = vault.getSecret('dbUrl');
-    if (dbUrl) createPool(dbUrl);
+    if (dbUrl) {
+      createPool(dbUrl);
+      // Auto-run discovery (enum detection, schema scan) in the background
+      runDiscovery(getPool()).catch(err => {
+        console.error('Auto-discovery failed:', err);
+      });
+    }
     const apiKey = vault.getSecret('llmApiKey');
     if (apiKey) initLLM(apiKey);
 
-    const origin = request.headers.origin || (request.headers['x-extension-id'] as string) || '';
+    const extId = request.headers['x-extension-id'] as string | undefined;
+    const origin = request.headers.origin || (extId ? `chrome-extension://${extId}` : '') || '';
     const session = sessionManager.createSession(origin);
 
     return {

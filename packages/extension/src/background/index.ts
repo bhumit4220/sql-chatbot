@@ -1,21 +1,26 @@
-import { setupMessageRouter, setAgentClient } from './message-router.js';
+import { setupMessageRouter, setAgentClient, getAgentClient } from './message-router.js';
 import { AgentClient } from './agent-client.js';
 import { AGENT_BASE_URL } from '@chatbot/shared';
 
-// Initialize message router
-setupMessageRouter();
-
-// Restore session on service worker startup
-chrome.storage.session.get(['sessionToken', 'extensionId'], (result: Record<string, string>) => {
-  if (result.sessionToken && result.extensionId) {
-    const client = new AgentClient({
-      sessionToken: result.sessionToken,
-      extensionId: result.extensionId,
-    });
-    setAgentClient(client);
-    console.log('Agent client restored from session storage');
-  }
+// Promise that resolves once session restoration is complete.
+// This prevents the race condition where a CHAT_QUESTION arrives before
+// chrome.storage.session.get callback fires (MV3 service worker restart).
+const sessionReady = new Promise<void>((resolve) => {
+  chrome.storage.session.get(['sessionToken', 'extensionId'], (result: Record<string, string>) => {
+    if (result.sessionToken && result.extensionId) {
+      const client = new AgentClient({
+        sessionToken: result.sessionToken,
+        extensionId: result.extensionId,
+      });
+      setAgentClient(client);
+      console.log('Agent client restored from session storage');
+    }
+    resolve();
+  });
 });
+
+// Initialize message router (passes sessionReady so handlers can await it)
+setupMessageRouter(sessionReady);
 
 // Listen for unlock events from popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

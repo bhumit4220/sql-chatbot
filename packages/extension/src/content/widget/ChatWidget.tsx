@@ -62,13 +62,14 @@ export function ChatWidget() {
       breadcrumbs: [],
     };
 
-    // Send to background worker
+    // Send to background worker with conversation history
     chrome.runtime.sendMessage({
       type: 'CHAT_QUESTION',
       payload: {
         question,
         conversationId: 'default',
         pageContext,
+        history: messages,
       },
     });
   };

@@ -118,11 +118,15 @@ async function runOrchestration(
 
   // Step 3 — Branch by question type
   switch (questionType) {
-    // ----- DATA: schema-only SQL ------------------------------------------
+    // ----- DATA: schema + enums SQL ----------------------------------------
     case 'data': {
+      // Fetch discovery results (enums) so the LLM knows status=1 means Active, etc.
+      const discoveryRes = await client.get<{ enums: EnumMapping[] }>('/discovery/results');
+      const enumsString = formatEnums(discoveryRes.enums ?? []);
+
       const sqlRes = await client.post<{ sql: string; explanation: string; confidence: number }>(
         '/llm/generate-sql',
-        { question, schema: fullSchema, history },
+        { question, schema: fullSchema, enums: enumsString, history },
       );
       const queryRes = await client.post<{ columns: string[]; rows: Record<string, unknown>[]; totalCount: number; executionTimeMs: number }>(
         '/db/query',
@@ -243,15 +247,28 @@ async function runOrchestration(
 // Message router — wires chrome.runtime.onMessage to handleMessage
 // ---------------------------------------------------------------------------
 
+// Promise that resolves once session storage has been checked for a saved token.
+let sessionReadyPromise: Promise<void> = Promise.resolve();
+
 /**
  * Routes messages from content scripts to the agent and back.
  * All agent HTTP calls go through the background worker.
+ *
+ * @param sessionReady — resolves once chrome.storage.session restoration is done.
+ *   This prevents the MV3 race condition where a message arrives before the
+ *   async storage callback has fired.
  */
-export function setupMessageRouter(): void {
+export function setupMessageRouter(sessionReady?: Promise<void>): void {
+  if (sessionReady) sessionReadyPromise = sessionReady;
+
   chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
-    handleMessage(message, sender).then(sendResponse).catch(err => {
-      sendResponse({ error: err.message });
-    });
+    // Wait for session restoration before handling any message
+    sessionReadyPromise
+      .then(() => handleMessage(message, sender))
+      .then(sendResponse)
+      .catch(err => {
+        sendResponse({ error: err.message });
+      });
     return true; // Keep channel open for async response
   });
 }

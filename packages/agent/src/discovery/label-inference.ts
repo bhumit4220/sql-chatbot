@@ -4,7 +4,10 @@ import { searchCode } from '../git/search.js';
 
 /**
  * Infers enum labels from code search results.
- * Searches code index for enum definitions matching the table.column pattern.
+ * Supports multiple enum definition patterns:
+ *   - Ruby/Rails: enum status: { 'Active': 1, 'Inactive': 2 }
+ *   - Python:     STATUS_ACTIVE = 1
+ *   - JS/TS:      Active = 1, or { Active: 1 }
  */
 export function inferEnumLabelsFromCode(
   candidates: EnumCandidate[]
@@ -15,27 +18,51 @@ export function inferEnumLabelsFromCode(
     // Search for the column name in code (e.g., "status" enum definitions)
     let codeResults: { content: string; score: number }[] = [];
     try {
-      codeResults = searchCode(`${candidate.column} enum ${candidate.table}`, 5);
+      codeResults = searchCode(`enum ${candidate.column}`, 10);
     } catch {
       // Code index may not exist yet — skip code search
     }
 
-    const mappings: Record<string, string> = {};
+    // Also try searching for the column name with common enum patterns
+    if (codeResults.length === 0) {
+      try {
+        codeResults = searchCode(`${candidate.column} enum ${candidate.table}`, 5);
+      } catch {
+        // Ignore
+      }
+    }
 
-    // Try to extract mappings from code
+    const mappings: Record<string, string> = {};
     let foundInCode = false;
+
     for (const chunk of codeResults) {
-      // Look for patterns like: status: { Active: 1, Inactive: 2 }
-      // or enum(:status, active: 1, inactive: 2)
-      const enumPattern = new RegExp(
-        `(\\w+)\\s*[:=]\\s*${candidate.distinctValues.map(v => `(${v})`).join('|')}`,
-        'gi'
-      );
-      const matches = chunk.content.matchAll(enumPattern);
-      for (const match of matches) {
-        if (match[1] && match[2]) {
-          mappings[match[2]] = match[1].replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      const content = chunk.content;
+
+      // Pattern 1: Ruby/Rails hash enum — 'Label': value or "Label": value
+      // Matches: 'Active': 1, "Inactive": 2
+      const rubyEnumPattern = /['"](\w[\w\s]*?)['"]:\s*(\d+)/g;
+      for (const match of content.matchAll(rubyEnumPattern)) {
+        const label = match[1];
+        const value = match[2];
+        if (candidate.distinctValues.includes(Number(value))) {
+          mappings[value] = label;
           foundInCode = true;
+        }
+      }
+
+      // Pattern 2: JS/TS/Python — Label = value or Label: value (without quotes)
+      // Matches: Active = 1, Active: 1
+      if (!foundInCode) {
+        const jsEnumPattern = /(\w+)\s*[:=]\s*(\d+)/g;
+        for (const match of content.matchAll(jsEnumPattern)) {
+          const label = match[1];
+          const value = match[2];
+          // Skip generic words that aren't labels
+          if (/^(enum|type|const|let|var|def|class|module|id|pk)$/i.test(label)) continue;
+          if (candidate.distinctValues.includes(Number(value))) {
+            mappings[value] = label.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            foundInCode = true;
+          }
         }
       }
     }

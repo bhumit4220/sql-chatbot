@@ -18,6 +18,22 @@ import {
   buildGuidancePrompt,
 } from './prompts.js';
 
+type ChatMessage = { role: 'user' | 'assistant'; content: string };
+
+/**
+ * Converts conversation history into OpenAI message format.
+ * Keeps the last N exchanges to stay within token limits.
+ */
+function historyToMessages(history: ChatMessage[], maxPairs = 5): OpenAI.ChatCompletionMessageParam[] {
+  if (!history || history.length === 0) return [];
+  // Take last N*2 messages (N user+assistant pairs)
+  const recent = history.slice(-(maxPairs * 2));
+  return recent.map((m) => ({
+    role: m.role as 'user' | 'assistant',
+    content: m.content,
+  }));
+}
+
 export class OpenAIEngine implements LLMEngine {
   private client: OpenAI;
   private model: string;
@@ -80,9 +96,16 @@ export class OpenAIEngine implements LLMEngine {
       currentDatetime: new Date().toISOString(),
     });
 
+    // Build messages: system prompt + conversation history + current question
+    const messages: OpenAI.ChatCompletionMessageParam[] = [
+      { role: 'system', content: prompt },
+      ...historyToMessages(context.history as ChatMessage[]),
+      { role: 'user', content: question },
+    ];
+
     const response = await this.client.chat.completions.create({
       model: this.model,
-      messages: [{ role: 'user', content: prompt }],
+      messages,
       temperature: 0.1,
       response_format: { type: 'json_object' },
     });
@@ -123,9 +146,16 @@ export class OpenAIEngine implements LLMEngine {
       });
     }
 
+    // Build messages: system prompt + conversation history + current question
+    const messages: OpenAI.ChatCompletionMessageParam[] = [
+      { role: 'system', content: prompt },
+      ...historyToMessages(context.history as ChatMessage[]),
+      { role: 'user', content: question },
+    ];
+
     const stream = await this.client.chat.completions.create({
       model: this.model,
-      messages: [{ role: 'user', content: prompt }],
+      messages,
       stream: true,
     });
 
@@ -143,9 +173,16 @@ export class OpenAIEngine implements LLMEngine {
       pageContext: context.pageContext || '',
     });
 
+    // Build messages: system prompt + conversation history + current question
+    const messages: OpenAI.ChatCompletionMessageParam[] = [
+      { role: 'system', content: prompt },
+      ...historyToMessages(context.history as ChatMessage[]),
+      { role: 'user', content: question },
+    ];
+
     const stream = await this.client.chat.completions.create({
       model: this.model,
-      messages: [{ role: 'user', content: prompt }],
+      messages,
       stream: true,
     });
 
