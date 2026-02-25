@@ -1,7 +1,7 @@
 # SQL Chatbot V3 — Research Findings & Architecture Design
 
 > **Date**: 2026-02-25
-> **Status**: Approved (Audit v2 — 23 issues resolved)
+> **Status**: Approved (Audit v3 — 41 total issues resolved)
 > **Supersedes**: V2 Chrome Extension + Local Agent Design (2026-02-24)
 
 ---
@@ -179,6 +179,8 @@ urlpatterns += [path('chatbot/', include(chatbot_urls))]
 # settings.py
 CHATBOT_AGENT = {
     'API_KEY': os.environ['CHATBOT_API_KEY'],
+    # Optional auth check — defaults to request.user.is_staff
+    # 'AUTH_CHECK': 'myapp.auth.check_admin_session',
 }
 ```
 
@@ -319,7 +321,9 @@ Middleware → Cloud /api/v1/answer {question, codeSnippets, history}
 Middleware ← SSE → Extension
 ```
 
-#### Navigation/Guidance Mode: "Where do I manage user roles?"
+#### Navigation/Guidance Mode: "Where do I manage user roles?" / "How do I ban a user?"
+
+The cloud classifies as either `navigation` or `guidance` — these are two separate classify types but share the same middleware flow (no SQL or code search needed, just page context). `navigation` = "where is X?", `guidance` = "how do I do X?". The LLM uses the distinction to adjust its answer style (link vs step-by-step instructions).
 
 ```
 Extension → POST /chatbot/ask {question, history, pageContext}
@@ -367,7 +371,7 @@ GET /.well-known/chatbot-agent.json
 
 **Fallback — Manual configuration** in extension popup for edge cases.
 
-**Per-origin state** stored in `chrome.storage.local` (not `sync` — avoids 8KB/100KB quota limits and prevents localhost configs from syncing across machines):
+**Per-origin state** stored in `chrome.storage.local` (not `sync` — avoids 8KB/100KB quota limits and prevents localhost configs from syncing across machines). Each site config is ~100 bytes; `chrome.storage.local` has a 10MB quota, supporting 100,000+ sites — quota is not a concern:
 ```json
 {
   "sites": {
@@ -390,14 +394,23 @@ Cloud generates SQL → Middleware validates + executes locally → Raw results 
 **Data flow clarification**: Raw SQL results (column values, row data) ARE sent to the cloud's `/api/v1/answer` endpoint so the LLM can generate accurate natural language answers. DB credentials never leave the customer's server, but query result data does transit to the cloud for processing. This is the same model used by BlazeSQL and similar products.
 
 **SQL execution safety**: All queries are wrapped in an explicit transaction block:
+
 ```sql
-BEGIN;
-SET TRANSACTION READ ONLY;
-<generated SQL with forced LIMIT>;
-COMMIT;
+-- Node.js (pg driver): send as a single multi-statement query
+BEGIN; SET TRANSACTION READ ONLY; <generated SQL with forced LIMIT>; COMMIT;
 ```
 
-This prevents the `SET TRANSACTION READ ONLY` race condition present in V2's auto-commit mode. The 8-layer SQL validator (from V2 `@chatbot/shared`) runs before execution.
+```ruby
+# Rails: use raw SQL via connection.execute, NOT ActiveRecord::Base.transaction
+# ActiveRecord's transaction {} uses savepoints and has different semantics
+conn = ActiveRecord::Base.connection
+conn.execute("BEGIN")
+conn.execute("SET TRANSACTION READ ONLY")
+result = conn.execute(validated_sql)
+conn.execute("COMMIT")
+```
+
+This prevents the `SET TRANSACTION READ ONLY` race condition present in V2's auto-commit mode. The 8-layer SQL validator runs before execution.
 
 ### Decision 4: Auth Model — Two Layers
 
@@ -420,13 +433,17 @@ end
 
 The Rails engine defaults to checking for a Devise admin session. If the host app uses a different auth system, the developer provides a lambda. If no auth callback is configured, the middleware logs a warning and allows unauthenticated access (for development only — production should always have auth).
 
-CORS: the middleware sets `Access-Control-Allow-Origin` to the request's origin (not wildcard), `Access-Control-Allow-Credentials: true`, and only allows origins matching `chrome-extension://` or the app's own domain.
+**CORS policy**: The middleware sets `Access-Control-Allow-Origin` to the request's origin (not wildcard), `Access-Control-Allow-Credentials: true`. Allowed origin check: any origin starting with `chrome-extension://` (scheme-prefix check only — extension IDs change per installation and cannot be known at gem install time) OR matching the app's own domain. The admin session check is the real auth gate; CORS is defense-in-depth.
+
+**All chatbot endpoints** (`/chatbot/ask`, `/chatbot/status`, `/chatbot/rediscover`) require the same auth callback. There is no unauthenticated endpoint except the meta tag injection (which is a static HTML tag, not an endpoint).
 
 **Why content script, not background worker**: Chrome MV3 background service workers do NOT have access to page session cookies. Only content scripts (running in the page's origin context) get cookies included automatically in `fetch()` calls. This is a fundamental browser security model — V2's approach of using the background worker required custom session tokens, which V3 eliminates by using the existing admin session.
 
 ### Decision 5: Conversation History — Extension-Only
 
-History lives **only in the extension** (IndexedDB). The extension passes the last 10 messages in every `/chatbot/ask` request. The middleware is stateless regarding conversations. No history endpoint needed.
+History lives **only in the extension** (IndexedDB). The extension passes the last 10 messages (constant: `MAX_HISTORY_MESSAGES = 10`, inherited from V2's `constants.ts`) in every `/chatbot/ask` request. The middleware is stateless regarding conversations. No history endpoint needed.
+
+**IndexedDB schema change from V2**: V2's IndexedDB schema keys chat history by `projectId` + `conversationId`, where `projectId` maps to a `projects` store. V3 eliminates the `projects` concept — history is keyed by `origin + conversationId`. This is a **breaking schema change** (not backward-compatible). The V2 `storage/` module requires restructuring, not just configuration changes. Reuse level is ~60%, not 85%.
 
 ### Decision 6: Code Indexing — Lazy Initialization
 
@@ -436,8 +453,10 @@ Code index is built on **first request that needs code** (lazy). The middleware 
 - Re-indexes daily on next code request after 24h
 
 **Background indexing mechanism**:
-- **Rails**: `Thread.new { index_codebase }` — runs in a separate thread, does not block the request. Puma's multi-threaded model supports this natively.
+- **Rails**: `Thread.new { index_codebase }` — the code indexer writes to its own SQLite file (not the app's PG connection pool), so it is safe from ActiveRecord connection pool exhaustion. If the indexer needs to read from PG (e.g., for enum sampling during discovery), it MUST wrap those calls in `ActiveRecord::Base.connection_pool.with_connection { ... }` to properly check out and return connections. Never use bare `ActiveRecord::Base.connection` in a spawned thread.
 - **Node.js**: `setImmediate(() => indexCodebase())` or worker thread for large codebases.
+
+**Enum sampling timeout in Ruby**: Use `SET statement_timeout = '5000'` (5 seconds, in milliseconds) before each sample query via `connection.execute`. This is the PostgreSQL-native per-query timeout — no Ruby-level timeout needed.
 
 Default paths: Rails → `Rails.root`, Node.js → `process.cwd()`. Developer can override with `config.codebase_path`.
 
@@ -464,13 +483,32 @@ Per-origin config in `chrome.storage.local` (see Decision 2). Conversation histo
 
 | Endpoint | Input | Output |
 |----------|-------|--------|
-| `POST /api/v1/classify` | question + schema summary + page context | `{type, confidence}` where type is one of: `data`, `data_with_code`, `code`, `navigation`, `guidance` |
+| `POST /api/v1/classify` | question + schema summary + page context | `{type, confidence, searchTerms?}` — `type` is one of: `data`, `data_with_code`, `code`, `navigation`, `guidance`. `searchTerms` is included when type is `code` or `data_with_code` (saves a round-trip). |
 | `POST /api/v1/generate-sql` | question + schema + enums + discovered context + history + optional codeContext | `{sql}` |
 | `POST /api/v1/answer` | question + results (sqlResult/codeSnippets/pageContext) + history | SSE streamed answer |
 
 Auth: API key (`Authorization: Bearer <key>`). Rate limit: 100 req/min per key. Model: GPT-4o-mini. All prompt engineering lives in the cloud (moved from V2's `prompts.ts`, with MSP-specific rules replaced by the `discoveredContext` parameter).
 
+**Timeouts**: All middleware-to-cloud HTTP calls use a 30-second timeout. Rails: `Net::HTTP.open_timeout = 5, read_timeout = 30`. Node.js: `AbortController` with 30s signal. If any cloud call times out, the middleware returns the error per Decision 10's graceful degradation rules.
+
 No billing system for V3 — just API key validation against a simple database. Stack: Node.js + Express.
+
+### `/chatbot/status` Response Schema
+
+```json
+{
+  "version": "1.0.0",
+  "status": "ready",           // "ready" | "discovering" | "error"
+  "discoveryState": {
+    "schema": "completed",     // "pending" | "running" | "completed" | "failed"
+    "enums": "completed",
+    "code": "pending"
+  },
+  "authRequired": true
+}
+```
+
+The extension uses this to decide whether to mount the widget (`status != "error"`) and whether to show a loading state (`status == "discovering"`).
 
 ### Decision 10: Error Handling — Graceful Degradation
 
@@ -485,9 +523,9 @@ No billing system for V3 — just API key validation against a simple database. 
 
 No offline mode. Product requires both middleware and cloud.
 
-### Decision 11: Action Mode — Deferred to V3.1
+### Decision 11: Scope — Action Mode Deferred to V3.1
 
-V3 ships with 4 question types: Data, Data+Code, Code, Navigation/Guidance. Action mode (DOM form-filling, button-clicking) is complex and risky. Deferred.
+V3 ships with 5 classify types across 4 modes: Data, Data+Code, Code, Navigation, Guidance. Action mode (DOM form-filling, button-clicking) is complex and risky. Deferred to V3.1.
 
 ### Decision 12: Enum Overrides — Auto-Discovery Primary
 
@@ -519,7 +557,7 @@ No admin-facing correction UI for V3. Admin correction UI is a V3.1 feature.
 | Extension ↔ Middleware auth | Content script runs in page context — session cookies auto-included. No custom tokens needed. |
 | CORS | `Access-Control-Allow-Origin` set to specific requesting origin (not `*`), `Access-Control-Allow-Credentials: true`. Only `chrome-extension://` origins and the app's own domain are allowed. |
 | Code file exposure | Code snippets ARE sent to cloud for LLM-powered explanation. The cloud does not store them beyond the request. Sensitive files (`.env`, credentials) are excluded by the indexer. |
-| Sensitive column filtering | Schema inspector filters columns matching: `password`, `pwd`, `token`, `secret`, `ssn`, `api_key`, `salt`, `encr_`, `stripe_`, `bank_` |
+| Sensitive column filtering | **Credentials** (filtered from schema — never sent to cloud): `password`, `pwd`, `token`, `secret`, `ssn`, `api_key`, `salt`, `encr_`, `stripe_`, `bank_`. **PII columns** (included in schema for query generation but column names flagged): `email`, `phone`, `address`, `first_name`, `last_name`, `name`, `dob`, `date_of_birth`, `ip_address`, `card`. Both lists inherited from V2's `SENSITIVE_COLUMN_PATTERNS` and `PII_COLUMN_PATTERNS`. |
 | Sensitive file filtering | Code indexer skips `.env`, credentials files, `node_modules/`, `.git/`, and files matching secret patterns (API keys, passwords in source) |
 
 ---
@@ -533,6 +571,7 @@ The middleware streams answers back to the extension using Server-Sent Events (S
 - Response headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no` (for Nginx)
 - Requires **Puma** web server (not Unicorn — Unicorn does not support streaming)
 - Rack middleware that buffers responses (e.g., `Rack::Deflater`) must be bypassed for SSE endpoints
+- **Dual-stream pattern**: The Rails Live controller thread simultaneously reads the cloud's SSE response (via `Net::HTTP` with streaming body using `response.read_body { |chunk| ... }`) and writes to its own SSE response. This is synchronous within one thread — read a chunk from cloud, write it to the extension response. No concurrent I/O needed since the cloud produces tokens sequentially.
 
 ### Node.js / Express
 - `res.setHeader('Content-Type', 'text/event-stream')`, `res.flushHeaders()`
@@ -556,7 +595,7 @@ data: [DONE]
 | `shared/src/types/` | Shared types across V3 TypeScript packages | 80% reuse, adapt for new API shapes + add `data_with_code` type |
 | `shared/src/constants.ts` | Split between middleware and cloud | 70% reuse |
 | `agent/src/db/schema-inspector.ts` | Rails middleware (port SQL to ActiveRecord) + Node.js middleware (direct) | Logic reuse, DB adapter changes |
-| `agent/src/db/sql-executor.ts` | Rails middleware (port to ActiveRecord) + Node.js middleware (direct). **Fix**: wrap in explicit `BEGIN; SET TRANSACTION READ ONLY; ...; COMMIT;` | Logic reuse + bug fix |
+| `agent/src/db/sql-executor.ts` | Rails middleware + Node.js middleware (direct). **Fix**: wrap in explicit `BEGIN; SET TRANSACTION READ ONLY; ...; COMMIT;`. **Rails**: use raw `connection.execute()`, NOT `ActiveRecord::Base.transaction {}` (see Decision 3). | Logic reuse + bug fix |
 | `agent/src/discovery/data-sampler.ts` | Middleware (both frameworks). **Add**: 5s timeout per table, skip tables > 1M rows, cap at 100 tables. | Logic reuse + performance guards |
 | `agent/src/discovery/label-inference.ts` | Middleware (both frameworks) | As-is (framework-agnostic regex) |
 | `agent/src/discovery/pipeline.ts` | Middleware (both frameworks) | Logic reuse, enhanced with model parsing |
@@ -568,10 +607,11 @@ data: [DONE]
 | `extension/src/content/crawler/` | V3 extension | As-is |
 | `extension/src/background/message-router.ts` | V3 extension. **Simplified**: background worker handles only storage/lifecycle, not HTTP requests. | 40% reuse, major simplification |
 | `extension/src/background/agent-client.ts` | **Moved to content script**. Remove vault/session logic. Add `credentials: 'include'` to all `fetch()` calls. | 60% reuse, relocated + simplified |
-| `extension/src/storage/` | V3 extension. **Change**: use `chrome.storage.local` (not `sync`). Add origin-based keying. | 85% reuse |
+| `extension/src/storage/` | V3 extension. **Breaking change**: V2 keys by `projectId`, V3 keys by `origin`. Use `chrome.storage.local` (not `sync`). Schema migration required. | 60% reuse, schema restructure |
 | `extension/src/popup/` | V3 extension popup. **Redesign**: no vault unlock, just site status + manual endpoint config. | 30% reuse |
-| `agent/src/vault/` | Not needed in V3 | Removed |
-| `agent/src/auth/session.ts` | Not needed in V3 | Removed |
+| `agent/src/git/cloner.ts` | Not needed in V3 — middleware indexes local filesystem directly (`Rails.root` / `cwd()`), no remote cloning | Removed |
+| `agent/src/vault/` | Not needed in V3 — middleware uses env vars for API key | Removed |
+| `agent/src/auth/session.ts` | Not needed in V3 — uses app's existing admin session | Removed |
 
 ---
 
@@ -636,6 +676,13 @@ data: [DONE]
 | Shared Types + SQL Validator (TS) | TypeScript, `node-sql-parser` | `packages/shared/` |
 
 **Note**: The Rails gem requires a Ruby implementation of the SQL validator (using `pg_query` gem) since it cannot import the TypeScript `node-sql-parser` library. This is a significant porting task but `pg_query` provides equivalent PostgreSQL parsing capabilities.
+
+---
+
+## Repo Cleanup Notes
+
+- The top-level `widget/` directory is a **V1 artifact** (standalone IIFE widget from the Python/FastAPI version). It should be deleted or moved to a `v1-archive/` branch before V3 development begins.
+- The top-level `app/`, `alembic/` directories are also V1 Python artifacts.
 
 ---
 
