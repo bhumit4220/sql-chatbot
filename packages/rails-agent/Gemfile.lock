@@ -1,0 +1,61 @@
+PATH
+  remote: .
+  specs:
+    chatbot_agent (0.1.0)
+      net-http
+      pg_query (>= 4.0)
+      sqlite3 (>= 1.4)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+    addressable (2.8.8)
+      public_suffix (>= 2.0.2, < 8.0)
+    bigdecimal (4.0.1)
+    crack (1.0.1)
+      bigdecimal
+      rexml
+    diff-lcs (1.6.2)
+    google-protobuf (4.26.1-x86_64-linux)
+      rake (>= 13)
+    hashdiff (1.2.1)
+    mini_portile2 (2.8.9)
+    net-http (0.9.1)
+      uri (>= 0.11.1)
+    pg_query (6.0.0)
+      google-protobuf (>= 3.25.3)
+    public_suffix (5.1.1)
+    rake (13.3.1)
+    rexml (3.4.4)
+    rspec (3.13.2)
+      rspec-core (~> 3.13.0)
+      rspec-expectations (~> 3.13.0)
+      rspec-mocks (~> 3.13.0)
+    rspec-core (3.13.6)
+      rspec-support (~> 3.13.0)
+    rspec-expectations (3.13.5)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.13.0)
+    rspec-mocks (3.13.7)
+      diff-lcs (>= 1.2.0, < 2.0)
+      rspec-support (~> 3.13.0)
+    rspec-support (3.13.7)
+    sqlite3 (1.7.3)
+      mini_portile2 (~> 2.8.0)
+    uri (1.1.1)
+    webmock (3.26.1)
+      addressable (>= 2.8.0)
+      crack (>= 0.3.2)
+      hashdiff (>= 0.4.0, < 2.0.0)
+
+PLATFORMS
+  x86_64-linux
+
+DEPENDENCIES
+  chatbot_agent!
+  rake
+  rspec (~> 3.12)
+  webmock (~> 3.19)
+
+BUNDLED WITH
+   2.4.22

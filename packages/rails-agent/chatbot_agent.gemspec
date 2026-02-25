@@ -9,11 +9,13 @@ Gem::Specification.new do |spec|
 
   spec.files = Dir["lib/**/*", "app/**/*", "config/**/*", "LICENSE", "README.md"]
 
-  spec.add_dependency "rails", ">= 5.2"
   spec.add_dependency "pg_query", ">= 4.0"
   spec.add_dependency "sqlite3", ">= 1.4"
   spec.add_dependency "net-http"
 
-  spec.add_development_dependency "rspec-rails"
-  spec.add_development_dependency "webmock"
+  # Rails is a runtime dependency but not required for unit tests
+  # The Engine and Railtie only load when Rails is defined
+
+  spec.add_development_dependency "rspec", "~> 3.12"
+  spec.add_development_dependency "webmock", "~> 3.19"
 end
