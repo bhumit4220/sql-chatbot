@@ -1,0 +1,30 @@
+{
+  "name": "@chatbot/cloud",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@chatbot/shared": "workspace:*",
+    "express": "^4.21.0",
+    "openai": "^4.72.0",
+    "cors": "^2.8.5",
+    "helmet": "^8.0.0",
+    "express-rate-limit": "^7.4.0",
+    "better-sqlite3": "^11.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "tsx": "^4.19.0",
+    "vitest": "^2.1.0",
+    "@types/express": "^5.0.0",
+    "@types/cors": "^2.8.17",
+    "@types/better-sqlite3": "^7.6.12",
+    "supertest": "^7.0.0",
+    "@types/supertest": "^6.0.2"
+  }
+}
