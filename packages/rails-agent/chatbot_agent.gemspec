@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.files = Dir["lib/**/*", "app/**/*", "config/**/*", "LICENSE", "README.md"]
 
   spec.add_dependency "pg_query", ">= 4.0"
-  spec.add_dependency "sqlite3", ">= 1.4"
+  spec.add_dependency "sqlite3", ">= 1.4", "< 1.7"
   spec.add_dependency "net-http"
 
   # Rails is a runtime dependency but not required for unit tests
