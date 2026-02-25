@@ -1,163 +1,125 @@
 import React, { useState, useEffect } from 'react';
-import type { AuthStatusResponse } from '@chatbot/shared';
-import { AGENT_BASE_URL } from '@chatbot/shared';
-import { AgentStatus } from './components/AgentStatus.js';
-import { UnlockForm } from './components/UnlockForm.js';
-import { Settings } from './components/Settings.js';
 
-type View = 'status' | 'unlock' | 'settings';
+interface SiteConfig {
+  endpoint: string;
+  discoveredAt: number;
+}
+
+interface SiteEntry {
+  origin: string;
+  config: SiteConfig;
+}
 
 export function App() {
-  const [view, setView] = useState<View>('status');
-  const [agentStatus, setAgentStatus] = useState<AuthStatusResponse | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [sites, setSites] = useState<SiteEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newOrigin, setNewOrigin] = useState('');
+  const [newEndpoint, setNewEndpoint] = useState('');
 
-  const checkAgent = async () => {
+  const loadSites = async () => {
     try {
-      const res = await fetch(`${AGENT_BASE_URL}/auth/status`);
-      if (res.ok) {
-        const data = await res.json();
-        setAgentStatus(data);
-        setConnected(true);
-        setError(null);
-
-        if (data.configured && data.locked) {
-          setView('unlock');
-        }
-      } else {
-        setConnected(false);
-        setError('Agent returned error');
-      }
-    } catch {
-      setConnected(false);
-      setError('Agent not running. Start it with: pnpm dev:agent');
+      const response = await chrome.runtime.sendMessage({ type: 'GET_SITE_CONFIGS' });
+      const entries: SiteEntry[] = Object.entries(response.sites || {}).map(
+        ([origin, config]) => ({ origin, config: config as SiteConfig })
+      );
+      entries.sort((a, b) => b.config.discoveredAt - a.config.discoveredAt);
+      setSites(entries);
+    } catch (err) {
+      console.error('Failed to load sites:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => {
-    checkAgent();
-  }, []);
+  useEffect(() => { loadSites(); }, []);
 
-  const handleUnlocked = (sessionToken: string) => {
-    // Notify background worker
-    chrome.runtime.sendMessage({
-      type: 'AGENT_UNLOCKED',
-      payload: {
-        sessionToken,
-        extensionId: chrome.runtime.id,
-      },
+  const removeSite = async (origin: string) => {
+    await chrome.runtime.sendMessage({ type: 'REMOVE_SITE', payload: { origin } });
+    await loadSites();
+  };
+
+  const addSite = async () => {
+    if (!newOrigin.trim() || !newEndpoint.trim()) return;
+    await chrome.runtime.sendMessage({
+      type: 'ADD_SITE_MANUALLY',
+      payload: { origin: newOrigin.trim(), endpoint: newEndpoint.trim() },
     });
-    checkAgent();
-    setView('status');
+    setNewOrigin('');
+    setNewEndpoint('');
+    setShowAddForm(false);
+    await loadSites();
   };
 
   return (
-    <div style={styles.container}>
-      <header style={styles.header}>
-        <h1 style={styles.title}>SQL Chatbot</h1>
-        <div style={styles.nav}>
-          <button
-            style={view === 'status' ? styles.navActive : styles.navBtn}
-            onClick={() => setView('status')}
-          >
-            Status
-          </button>
-          <button
-            style={view === 'settings' ? styles.navActive : styles.navBtn}
-            onClick={() => setView('settings')}
-          >
-            Settings
-          </button>
-        </div>
-      </header>
+    <div style={{ width: 360, fontFamily: 'system-ui, sans-serif', fontSize: 13 }}>
+      <div style={{ padding: '12px 16px', background: '#0d6efd', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>SQL Chatbot</span>
+        <span style={{ fontSize: 11, opacity: 0.8 }}>v3.0.0</span>
+      </div>
 
-      <main style={styles.main}>
-        {view === 'status' && (
-          <AgentStatus
-            connected={connected}
-            status={agentStatus}
-            error={error}
-            onRetry={checkAgent}
-            onUnlock={() => setView('unlock')}
-          />
+      <div style={{ padding: '12px 16px' }}>
+        {loading ? (
+          <p style={{ color: '#6c757d', textAlign: 'center' }}>Loading...</p>
+        ) : sites.length === 0 ? (
+          <p style={{ color: '#6c757d', textAlign: 'center', margin: '20px 0' }}>
+            No sites detected. Visit a page with the chatbot middleware installed, or add one manually.
+          </p>
+        ) : (
+          <div>
+            {sites.map((site) => (
+              <div key={site.origin} style={{ display: 'flex', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #e9ecef' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#28a745', marginRight: 8, flexShrink: 0 }} />
+                <div style={{ flex: 1, overflow: 'hidden' }}>
+                  <div style={{ fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {site.origin}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#6c757d' }}>{site.config.endpoint}</div>
+                </div>
+                <button
+                  onClick={() => removeSite(site.origin)}
+                  style={{ background: 'none', border: 'none', color: '#dc3545', cursor: 'pointer', padding: '4px 8px', fontSize: 14 }}
+                  title="Remove site"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
         )}
-        {view === 'unlock' && (
-          <UnlockForm onUnlocked={handleUnlocked} onCancel={() => setView('status')} />
-        )}
-        {view === 'settings' && <Settings />}
-      </main>
 
-      <footer style={styles.footer}>
-        <span>v2.0.0</span>
-        <a
-          href="https://github.com/bhumit4220/sql-chatbot"
-          target="_blank"
-          rel="noopener"
-          style={styles.link}
-        >
-          GitHub
-        </a>
-      </footer>
+        {showAddForm ? (
+          <div style={{ marginTop: 12, padding: 12, background: '#f8f9fa', borderRadius: 8 }}>
+            <input
+              value={newOrigin}
+              onChange={(e) => setNewOrigin(e.target.value)}
+              placeholder="Origin (e.g. https://admin.example.com)"
+              style={{ width: '100%', padding: '6px 8px', border: '1px solid #dee2e6', borderRadius: 4, marginBottom: 8, fontSize: 12, boxSizing: 'border-box' }}
+            />
+            <input
+              value={newEndpoint}
+              onChange={(e) => setNewEndpoint(e.target.value)}
+              placeholder="Endpoint (e.g. https://admin.example.com/chatbot)"
+              style={{ width: '100%', padding: '6px 8px', border: '1px solid #dee2e6', borderRadius: 4, marginBottom: 8, fontSize: 12, boxSizing: 'border-box' }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={addSite} style={{ flex: 1, padding: '6px 12px', background: '#0d6efd', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
+                Add
+              </button>
+              <button onClick={() => setShowAddForm(false)} style={{ flex: 1, padding: '6px 12px', background: '#e9ecef', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAddForm(true)}
+            style={{ marginTop: 12, width: '100%', padding: '8px 12px', background: 'white', border: '1px solid #dee2e6', borderRadius: 8, cursor: 'pointer', fontSize: 12, color: '#495057' }}
+          >
+            + Add site manually
+          </button>
+        )}
+      </div>
     </div>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    height: '100%',
-    backgroundColor: '#f8f9fa',
-    color: '#212529',
-  },
-  header: {
-    padding: '12px 16px',
-    borderBottom: '1px solid #dee2e6',
-    backgroundColor: '#fff',
-  },
-  title: {
-    margin: 0,
-    fontSize: '16px',
-    fontWeight: 600,
-  },
-  nav: {
-    display: 'flex',
-    gap: '8px',
-    marginTop: '8px',
-  },
-  navBtn: {
-    padding: '4px 12px',
-    border: '1px solid #dee2e6',
-    borderRadius: '4px',
-    background: '#fff',
-    cursor: 'pointer',
-    fontSize: '12px',
-  },
-  navActive: {
-    padding: '4px 12px',
-    border: '1px solid #0d6efd',
-    borderRadius: '4px',
-    background: '#e7f1ff',
-    cursor: 'pointer',
-    fontSize: '12px',
-    color: '#0d6efd',
-  },
-  main: {
-    flex: 1,
-    padding: '16px',
-    overflow: 'auto',
-  },
-  footer: {
-    padding: '8px 16px',
-    borderTop: '1px solid #dee2e6',
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '11px',
-    color: '#6c757d',
-  },
-  link: {
-    color: '#0d6efd',
-    textDecoration: 'none',
-  },
-};
