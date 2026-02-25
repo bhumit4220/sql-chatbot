@@ -1,53 +1,60 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { extractPageData } from '../crawler/extractor.js';
+import { discoverMiddleware } from '../discovery/index.js';
+import { askQuestion } from '../api/client.js';
+import type { StreamCallbacks } from '../api/client.js';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
 }
 
+type DiscoveryStatus = 'discovering' | 'ready' | 'unavailable' | 'auth-required';
+
 export function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  const [endpoint, setEndpoint] = useState<string | null>(null);
+  const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus>('discovering');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const origin = window.location.origin;
+  const conversationId = `${origin}-default`;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Listen for streaming responses from background
+  // Run discovery on mount
   useEffect(() => {
-    const handler = (message: any) => {
-      if (message.type === 'CHAT_RESPONSE_CHUNK') {
-        setMessages(prev => {
-          const last = prev[prev.length - 1];
-          if (last && last.role === 'assistant') {
-            return [
-              ...prev.slice(0, -1),
-              { ...last, content: last.content + message.payload.token },
-            ];
-          }
-          return [...prev, { role: 'assistant', content: message.payload.token }];
-        });
-      } else if (message.type === 'CHAT_RESPONSE_DONE') {
-        setStreaming(false);
-      } else if (message.type === 'CHAT_ERROR') {
-        setStreaming(false);
-        setMessages(prev => [
-          ...prev,
-          { role: 'assistant', content: `Error: ${message.payload.error}` },
-        ]);
+    let cancelled = false;
+
+    async function runDiscovery() {
+      setDiscoveryStatus('discovering');
+      try {
+        const result = await discoverMiddleware(origin);
+        if (cancelled) return;
+        if (result) {
+          setEndpoint(result.endpoint);
+          setDiscoveryStatus('ready');
+        } else {
+          setDiscoveryStatus('unavailable');
+        }
+      } catch {
+        if (!cancelled) {
+          setDiscoveryStatus('unavailable');
+        }
       }
-    };
+    }
 
-    chrome.runtime.onMessage.addListener(handler);
-    return () => chrome.runtime.onMessage.removeListener(handler);
-  }, []);
+    runDiscovery();
+    return () => { cancelled = true; };
+  }, [origin]);
 
-  const sendMessage = () => {
-    if (!input.trim() || streaming) return;
+  const sendMessage = async () => {
+    if (!input.trim() || streaming || !endpoint) return;
 
     const question = input.trim();
     setInput('');
@@ -72,16 +79,46 @@ export function ChatWidget() {
       breadcrumbs,
     };
 
-    // Send to background worker with conversation history
-    chrome.runtime.sendMessage({
-      type: 'CHAT_QUESTION',
-      payload: {
-        question,
-        conversationId: 'default',
-        pageContext,
-        history: messages,
+    const callbacks: StreamCallbacks = {
+      onToken: (token: string) => {
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'assistant') {
+            return [
+              ...prev.slice(0, -1),
+              { ...last, content: last.content + token },
+            ];
+          }
+          return [...prev, { role: 'assistant', content: token }];
+        });
       },
-    });
+      onDone: () => {
+        setStreaming(false);
+      },
+      onError: (error: string) => {
+        setStreaming(false);
+
+        // Detect auth errors
+        if (error.startsWith('401')) {
+          setDiscoveryStatus('auth-required');
+        }
+
+        setMessages(prev => [
+          ...prev,
+          { role: 'assistant', content: `Error: ${error}` },
+        ]);
+      },
+    };
+
+    await askQuestion(
+      endpoint,
+      {
+        question,
+        history: messages.map(m => ({ role: m.role, content: m.content })),
+        pageContext: JSON.stringify(pageContext),
+      },
+      callbacks
+    );
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -109,7 +146,22 @@ export function ChatWidget() {
       </div>
 
       <div className="chatbot-messages">
-        {messages.length === 0 && (
+        {discoveryStatus === 'discovering' && (
+          <p style={{ color: '#6c757d', fontSize: '13px', textAlign: 'center', marginTop: '40px' }}>
+            Discovering chatbot service...
+          </p>
+        )}
+        {discoveryStatus === 'unavailable' && (
+          <p style={{ color: '#dc3545', fontSize: '13px', textAlign: 'center', marginTop: '40px' }}>
+            No chatbot service found on this site.
+          </p>
+        )}
+        {discoveryStatus === 'auth-required' && messages.length === 0 && (
+          <p style={{ color: '#fd7e14', fontSize: '13px', textAlign: 'center', marginTop: '40px' }}>
+            Please log in to use the chatbot.
+          </p>
+        )}
+        {discoveryStatus === 'ready' && messages.length === 0 && (
           <p style={{ color: '#6c757d', fontSize: '13px', textAlign: 'center', marginTop: '40px' }}>
             Ask me about your data, code, or admin panel.
           </p>
@@ -133,10 +185,19 @@ export function ChatWidget() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask a question..."
-          disabled={streaming}
+          placeholder={
+            discoveryStatus === 'discovering' ? 'Discovering...' :
+            discoveryStatus === 'unavailable' ? 'No chatbot available' :
+            discoveryStatus === 'auth-required' ? 'Please log in first' :
+            'Ask a question...'
+          }
+          disabled={streaming || discoveryStatus !== 'ready'}
         />
-        <button className="chatbot-send" onClick={sendMessage} disabled={streaming || !input.trim()}>
+        <button
+          className="chatbot-send"
+          onClick={sendMessage}
+          disabled={streaming || !input.trim() || discoveryStatus !== 'ready'}
+        >
           Send
         </button>
       </div>
