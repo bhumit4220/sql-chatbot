@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import { apiKeyAuth } from './middleware/auth.js';
 import { apiRateLimiter } from './middleware/rate-limit.js';
 import { initApiKeyDb } from './db/api-keys.js';
+import { initOpenAI } from './llm/openai.js';
+import { classifyRoute } from './routes/classify.js';
 
 const app = express();
 const PORT = process.env.PORT || 3100;
@@ -19,14 +21,15 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 app.use('/api/v1/', apiRateLimiter);
 app.use('/api/v1/', apiKeyAuth);
 
-// Route stubs — will be replaced in Tasks 2.2-2.4
-app.post('/api/v1/classify', (_req, res) => res.status(501).json({ error: 'Not implemented' }));
+// Routes
+app.post('/api/v1/classify', classifyRoute);
 app.post('/api/v1/generate-sql', (_req, res) => res.status(501).json({ error: 'Not implemented' }));
 app.post('/api/v1/answer', (_req, res) => res.status(501).json({ error: 'Not implemented' }));
 
 export function startServer() {
   const dbPath = process.env.API_KEYS_DB || './data/api-keys.sqlite3';
   initApiKeyDb(dbPath);
+  initOpenAI();
   app.listen(PORT, () => console.log(`Cloud LLM service listening on :${PORT}`));
 }
 
