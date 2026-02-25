@@ -2,21 +2,6 @@ import type { DBSchema } from 'idb';
 import type { CrawledPage, PageContext } from '@chatbot/shared';
 
 export interface ChatbotDB extends DBSchema {
-  projects: {
-    key: string; // project URL or identifier
-    value: {
-      id: string;
-      name: string;
-      agentUrl: string;
-      dbUrl: string; // just the host, never the full connection string
-      repoUrl?: string;
-      createdAt: number;
-      lastUsedAt: number;
-    };
-    indexes: {
-      'by-lastUsed': number;
-    };
-  };
   crawled_pages: {
     key: string; // page URL
     value: CrawledPage;
@@ -28,7 +13,7 @@ export interface ChatbotDB extends DBSchema {
     key: number; // auto-increment
     value: {
       id?: number;
-      projectId: string;
+      origin: string;
       conversationId: string;
       role: 'user' | 'assistant';
       content: string;
@@ -37,7 +22,7 @@ export interface ChatbotDB extends DBSchema {
     };
     indexes: {
       'by-conversation': string;
-      'by-project': string;
+      'by-origin': string;
       'by-timestamp': number;
     };
   };
@@ -51,4 +36,4 @@ export interface ChatbotDB extends DBSchema {
 }
 
 export const DB_NAME = 'sql-chatbot';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;

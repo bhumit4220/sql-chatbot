@@ -9,11 +9,15 @@ let dbPromise: Promise<IDBPDatabase<ChatbotDB>> | null = null;
 function getDB(): Promise<IDBPDatabase<ChatbotDB>> {
   if (!dbPromise) {
     dbPromise = openDB<ChatbotDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        // Projects store
-        if (!db.objectStoreNames.contains('projects')) {
-          const projectStore = db.createObjectStore('projects', { keyPath: 'id' });
-          projectStore.createIndex('by-lastUsed', 'lastUsedAt');
+      upgrade(db, oldVersion) {
+        // V1 → V2 migration: remove projects store, rebuild chat_history with origin
+        if (oldVersion < 2) {
+          if (db.objectStoreNames.contains('projects')) {
+            db.deleteObjectStore('projects');
+          }
+          if (db.objectStoreNames.contains('chat_history')) {
+            db.deleteObjectStore('chat_history');
+          }
         }
 
         // Crawled pages store
@@ -22,14 +26,14 @@ function getDB(): Promise<IDBPDatabase<ChatbotDB>> {
           crawlStore.createIndex('by-expiry', 'expiresAt');
         }
 
-        // Chat history store
+        // Chat history store (V3: origin-based, no projectId)
         if (!db.objectStoreNames.contains('chat_history')) {
           const chatStore = db.createObjectStore('chat_history', {
             keyPath: 'id',
             autoIncrement: true,
           });
           chatStore.createIndex('by-conversation', 'conversationId');
-          chatStore.createIndex('by-project', 'projectId');
+          chatStore.createIndex('by-origin', 'origin');
           chatStore.createIndex('by-timestamp', 'timestamp');
         }
 
@@ -46,7 +50,7 @@ function getDB(): Promise<IDBPDatabase<ChatbotDB>> {
 // === Chat History ===
 
 export async function addChatMessage(message: {
-  projectId: string;
+  origin: string;
   conversationId: string;
   role: 'user' | 'assistant';
   content: string;
@@ -70,12 +74,23 @@ export async function getConversationHistory(
   return messages.slice(-limit);
 }
 
-export async function clearChatHistory(projectId?: string): Promise<void> {
+export async function getOriginHistory(
+  origin: string,
+  limit: number = 50
+): Promise<ChatbotDB['chat_history']['value'][]> {
   const db = await getDB();
-  if (projectId) {
+  const tx = db.transaction('chat_history', 'readonly');
+  const index = tx.store.index('by-origin');
+  const messages = await index.getAll(origin);
+  return messages.slice(-limit);
+}
+
+export async function clearChatHistory(origin?: string): Promise<void> {
+  const db = await getDB();
+  if (origin) {
     const tx = db.transaction('chat_history', 'readwrite');
-    const index = tx.store.index('by-project');
-    let cursor = await index.openCursor(projectId);
+    const index = tx.store.index('by-origin');
+    let cursor = await index.openCursor(origin);
     while (cursor) {
       await cursor.delete();
       cursor = await cursor.continue();
@@ -100,23 +115,6 @@ export async function getCrawledPage(url: string): Promise<CrawledPage | undefin
 export async function getAllCrawledPages(): Promise<CrawledPage[]> {
   const db = await getDB();
   return db.getAll('crawled_pages');
-}
-
-// === Projects ===
-
-export async function saveProject(project: ChatbotDB['projects']['value']): Promise<void> {
-  const db = await getDB();
-  await db.put('projects', project);
-}
-
-export async function getProject(id: string): Promise<ChatbotDB['projects']['value'] | undefined> {
-  const db = await getDB();
-  return db.get('projects', id);
-}
-
-export async function getAllProjects(): Promise<ChatbotDB['projects']['value'][]> {
-  const db = await getDB();
-  return db.getAll('projects');
 }
 
 // === Settings ===

@@ -1,8 +1,7 @@
 /**
  * Storage module unit tests — IndexedDB CRUD via fake-indexeddb.
  *
- * Each test gets a fresh IndexedDB instance by resetting modules and
- * reconstructing the global indexedDB from fake-indexeddb.
+ * V3: Origin-based keying. No projects store. Chat history keyed by origin.
  */
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
@@ -22,7 +21,7 @@ async function getStorage() {
 }
 
 // ---------------------------------------------------------------------------
-// Chat history
+// Chat history (origin-based)
 // ---------------------------------------------------------------------------
 
 describe('Chat history CRUD', () => {
@@ -30,7 +29,7 @@ describe('Chat history CRUD', () => {
     const s = await getStorage();
 
     const id = await s.addChatMessage({
-      projectId: 'proj-1',
+      origin: 'https://admin.mowsnowpros.com',
       conversationId: 'conv-1',
       role: 'user',
       content: 'How many customers?',
@@ -43,16 +42,16 @@ describe('Chat history CRUD', () => {
     expect(messages[0].content).toBe('How many customers?');
     expect(messages[0].role).toBe('user');
     expect(messages[0].conversationId).toBe('conv-1');
-    expect(messages[0].projectId).toBe('proj-1');
+    expect(messages[0].origin).toBe('https://admin.mowsnowpros.com');
     expect(messages[0].timestamp).toBeTypeOf('number');
   });
 
   it('retrieves only messages for the requested conversation', async () => {
     const s = await getStorage();
 
-    await s.addChatMessage({ projectId: 'p1', conversationId: 'c-a', role: 'user', content: 'A1' });
-    await s.addChatMessage({ projectId: 'p1', conversationId: 'c-b', role: 'user', content: 'B1' });
-    await s.addChatMessage({ projectId: 'p1', conversationId: 'c-a', role: 'assistant', content: 'A2' });
+    await s.addChatMessage({ origin: 'https://example.com', conversationId: 'c-a', role: 'user', content: 'A1' });
+    await s.addChatMessage({ origin: 'https://example.com', conversationId: 'c-b', role: 'user', content: 'B1' });
+    await s.addChatMessage({ origin: 'https://example.com', conversationId: 'c-a', role: 'assistant', content: 'A2' });
 
     const msgsA = await s.getConversationHistory('c-a');
     expect(msgsA).toHaveLength(2);
@@ -62,25 +61,25 @@ describe('Chat history CRUD', () => {
     expect(msgsB).toHaveLength(1);
   });
 
-  it('clears chat history for a specific project', async () => {
+  it('clears chat history for a specific origin', async () => {
     const s = await getStorage();
 
-    await s.addChatMessage({ projectId: 'p1', conversationId: 'c1', role: 'user', content: 'P1 msg' });
-    await s.addChatMessage({ projectId: 'p2', conversationId: 'c2', role: 'user', content: 'P2 msg' });
+    await s.addChatMessage({ origin: 'https://site-a.com', conversationId: 'c1', role: 'user', content: 'A msg' });
+    await s.addChatMessage({ origin: 'https://site-b.com', conversationId: 'c2', role: 'user', content: 'B msg' });
 
-    await s.clearChatHistory('p1');
+    await s.clearChatHistory('https://site-a.com');
 
-    const p1 = await s.getConversationHistory('c1');
-    const p2 = await s.getConversationHistory('c2');
-    expect(p1).toHaveLength(0);
-    expect(p2).toHaveLength(1);
+    const a = await s.getConversationHistory('c1');
+    const b = await s.getConversationHistory('c2');
+    expect(a).toHaveLength(0);
+    expect(b).toHaveLength(1);
   });
 
-  it('clears all chat history when no projectId given', async () => {
+  it('clears all chat history when no origin given', async () => {
     const s = await getStorage();
 
-    await s.addChatMessage({ projectId: 'p1', conversationId: 'c1', role: 'user', content: 'msg1' });
-    await s.addChatMessage({ projectId: 'p2', conversationId: 'c2', role: 'user', content: 'msg2' });
+    await s.addChatMessage({ origin: 'https://site-a.com', conversationId: 'c1', role: 'user', content: 'msg1' });
+    await s.addChatMessage({ origin: 'https://site-b.com', conversationId: 'c2', role: 'user', content: 'msg2' });
 
     await s.clearChatHistory();
 
@@ -99,7 +98,7 @@ describe('getConversationHistory limit', () => {
 
     for (let i = 1; i <= 5; i++) {
       await s.addChatMessage({
-        projectId: 'p1',
+        origin: 'https://example.com',
         conversationId: 'conv-limit',
         role: 'user',
         content: `msg-${i}`,
@@ -115,54 +114,26 @@ describe('getConversationHistory limit', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Projects
+// Origin-based history retrieval
 // ---------------------------------------------------------------------------
 
-describe('Project CRUD', () => {
-  const project = {
-    id: 'proj-abc',
-    name: 'MSP Admin',
-    agentUrl: 'http://127.0.0.1:9876',
-    dbUrl: 'localhost:5432',
-    repoUrl: 'https://github.com/example/repo',
-    createdAt: Date.now(),
-    lastUsedAt: Date.now(),
-  };
-
-  it('saves and retrieves a project by id', async () => {
+describe('getOriginHistory', () => {
+  it('retrieves all messages for a specific origin', async () => {
     const s = await getStorage();
-    await s.saveProject(project);
 
-    const fetched = await s.getProject('proj-abc');
-    expect(fetched).toBeDefined();
-    expect(fetched!.name).toBe('MSP Admin');
-    expect(fetched!.agentUrl).toBe('http://127.0.0.1:9876');
+    await s.addChatMessage({ origin: 'https://site-a.com', conversationId: 'c1', role: 'user', content: 'A1' });
+    await s.addChatMessage({ origin: 'https://site-b.com', conversationId: 'c2', role: 'user', content: 'B1' });
+    await s.addChatMessage({ origin: 'https://site-a.com', conversationId: 'c1', role: 'assistant', content: 'A2' });
+
+    const msgs = await s.getOriginHistory('https://site-a.com');
+    expect(msgs).toHaveLength(2);
+    expect(msgs.map((m) => m.content)).toEqual(['A1', 'A2']);
   });
 
-  it('returns undefined for a non-existent project', async () => {
+  it('returns empty array for unknown origin', async () => {
     const s = await getStorage();
-    const result = await s.getProject('does-not-exist');
-    expect(result).toBeUndefined();
-  });
-
-  it('getAllProjects returns all saved projects', async () => {
-    const s = await getStorage();
-    await s.saveProject(project);
-    await s.saveProject({ ...project, id: 'proj-xyz', name: 'Other' });
-
-    const all = await s.getAllProjects();
-    expect(all).toHaveLength(2);
-    expect(all.map((p) => p.id).sort()).toEqual(['proj-abc', 'proj-xyz']);
-  });
-
-  it('saveProject upserts (put) an existing project', async () => {
-    const s = await getStorage();
-    await s.saveProject(project);
-    await s.saveProject({ ...project, name: 'Updated Name' });
-
-    const all = await s.getAllProjects();
-    expect(all).toHaveLength(1);
-    expect(all[0].name).toBe('Updated Name');
+    const msgs = await s.getOriginHistory('https://unknown.com');
+    expect(msgs).toHaveLength(0);
   });
 });
 
@@ -263,7 +234,6 @@ describe('cleanupExpired', () => {
   it('deletes expired crawled pages', async () => {
     const s = await getStorage();
 
-    // Save one expired and one valid page
     await s.saveCrawledPage({
       url: 'https://expired.example.com',
       title: 'Expired',
@@ -272,7 +242,7 @@ describe('cleanupExpired', () => {
       buttons: [],
       tables: [],
       crawledAt: Date.now() - 7_200_000,
-      expiresAt: Date.now() - 1000, // already expired
+      expiresAt: Date.now() - 1000,
     });
 
     await s.saveCrawledPage({
@@ -283,7 +253,7 @@ describe('cleanupExpired', () => {
       buttons: [],
       tables: [],
       crawledAt: Date.now(),
-      expiresAt: Date.now() + 3_600_000, // still valid
+      expiresAt: Date.now() + 3_600_000,
     });
 
     const result = await s.cleanupExpired();
@@ -297,16 +267,13 @@ describe('cleanupExpired', () => {
   it('deletes old chat messages beyond retention period', async () => {
     const s = await getStorage();
 
-    // Add a message with a very old timestamp by adding directly then
-    // verifying cleanup. Since addChatMessage uses Date.now(), we need
-    // to mock Date.now for the old message.
     const originalNow = Date.now;
 
     // Insert old message (8 days ago)
     const eightDaysAgo = originalNow() - 8 * 24 * 60 * 60 * 1000;
     vi.spyOn(Date, 'now').mockReturnValue(eightDaysAgo);
     await s.addChatMessage({
-      projectId: 'p1',
+      origin: 'https://example.com',
       conversationId: 'c1',
       role: 'user',
       content: 'old message',
@@ -315,7 +282,7 @@ describe('cleanupExpired', () => {
     // Insert recent message
     vi.spyOn(Date, 'now').mockReturnValue(originalNow());
     await s.addChatMessage({
-      projectId: 'p1',
+      origin: 'https://example.com',
       conversationId: 'c1',
       role: 'user',
       content: 'recent message',
@@ -329,5 +296,25 @@ describe('cleanupExpired', () => {
     const remaining = await s.getConversationHistory('c1');
     expect(remaining).toHaveLength(1);
     expect(remaining[0].content).toBe('recent message');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// No projects store (V3 removed it)
+// ---------------------------------------------------------------------------
+
+describe('V3 schema changes', () => {
+  it('does not have a projects store', async () => {
+    const { DB_NAME, DB_VERSION } = await import('../schema.js');
+    expect(DB_VERSION).toBe(2);
+
+    const { openDB } = await import('idb');
+    const db = await openDB(DB_NAME, DB_VERSION, {
+      upgrade(db) {
+        // Just check the store names
+      },
+    });
+    expect(Array.from(db.objectStoreNames)).not.toContain('projects');
+    db.close();
   });
 });
