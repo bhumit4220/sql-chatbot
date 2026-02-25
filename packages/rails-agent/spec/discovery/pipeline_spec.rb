@@ -138,6 +138,7 @@ RSpec.describe ChatbotAgent::Discovery::Pipeline do
       pipeline.run(async_code_index: true)
 
       expect(%w[running completed]).to include(pipeline.state[:code])
+      pipeline.wait_for_code_index # ensure thread completes before cleanup
     end
 
     it 'marks code as completed after thread finishes' do

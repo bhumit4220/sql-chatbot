@@ -45,7 +45,7 @@ module ChatbotAgent
         def format_for_prompt(candidates)
           candidates.map do |c|
             if c[:labels] && !c[:labels].empty?
-              values = c[:distinct_values].map { |v| "#{v}=#{c[:labels][v] || v}" }.join(', ')
+              values = c[:distinct_values].map { |v| "#{v}=#{c[:labels][v.to_s] || c[:labels][v] || v}" }.join(', ')
             else
               values = c[:distinct_values].join(', ')
             end
