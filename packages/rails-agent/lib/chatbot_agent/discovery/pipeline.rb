@@ -76,7 +76,7 @@ module ChatbotAgent
         end
 
         candidates = @enum_sampler.call
-        candidates = @label_inference.call(candidates)
+        candidates = @label_inference.call(candidates, @models_path)
         @results[:enums] = candidates
         cache.set('enums', candidates)
         @state[:enums] = 'completed'

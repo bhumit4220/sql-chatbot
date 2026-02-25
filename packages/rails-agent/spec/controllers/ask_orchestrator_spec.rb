@@ -55,7 +55,7 @@ RSpec.describe ChatbotAgent::Orchestration::AskOrchestrator do
       index_path: index_path,
       schema_inspector: -> { schema_data },
       enum_sampler: ->(**_opts) { enum_candidates },
-      label_inference: ->(candidates, **_opts) { candidates },
+      label_inference: ->(candidates, _models_path) { candidates },
       model_parser: ->(_dir) { model_data },
       models_path: tmpdir,
       app_path: tmpdir,
@@ -80,7 +80,7 @@ RSpec.describe ChatbotAgent::Orchestration::AskOrchestrator do
           cache_path: cache_path, index_path: index_path,
           schema_inspector: -> { schema_data },
           enum_sampler: ->(**_opts) { enum_candidates },
-          label_inference: ->(candidates, **_opts) { candidates },
+          label_inference: ->(candidates, _models_path) { candidates },
           model_parser: ->(_dir) { model_data },
           models_path: tmpdir, app_path: tmpdir,
         )

@@ -6,7 +6,7 @@ module ChatbotAgent
 
     def create
       question = params[:question]
-      history = params[:history] || []
+      history = (params[:history] || []).map { |h| h.respond_to?(:to_unsafe_h) ? h.to_unsafe_h : h.to_h }
       page_context = params[:pageContext]
 
       unless question.present?

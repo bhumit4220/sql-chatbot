@@ -20,7 +20,7 @@ RSpec.describe ChatbotAgent::Orchestration::StatusReporter do
       index_path: index_path,
       schema_inspector: -> { schema_data },
       enum_sampler: ->(**_opts) { [] },
-      label_inference: ->(candidates, **_opts) { candidates },
+      label_inference: ->(candidates, _models_path) { candidates },
       model_parser: ->(_dir) { {} },
       models_path: tmpdir,
       app_path: tmpdir,

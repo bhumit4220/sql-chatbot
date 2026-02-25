@@ -43,7 +43,7 @@ RSpec.describe ChatbotAgent::Discovery::Pipeline do
       index_path: index_path,
       schema_inspector: overrides[:schema_inspector] || -> { schema_data },
       enum_sampler: overrides[:enum_sampler] || ->(**_opts) { enum_candidates },
-      label_inference: overrides[:label_inference] || ->(candidates, **_opts) { candidates },
+      label_inference: overrides[:label_inference] || ->(candidates, _models_path) { candidates },
       model_parser: overrides[:model_parser] || ->(_dir) { model_data },
       models_path: overrides[:models_path] || File.join(tmpdir, 'models'),
       app_path: overrides[:app_path] || tmpdir,
@@ -87,7 +87,7 @@ RSpec.describe ChatbotAgent::Discovery::Pipeline do
     end
 
     it 'stores enum candidates with labels' do
-      inference = ->(candidates, **_opts) do
+      inference = ->(candidates, _models_path) do
         candidates.map { |c| c.merge(labels: { '1' => 'Active', '2' => 'Inactive', '3' => 'Deleted' }) }
       end
       pipeline = build_pipeline(label_inference: inference)

@@ -10,10 +10,42 @@ interface ChatMessage {
 interface AnswerInput {
   question: string;
   questionType: QuestionType;
-  sqlResult?: string;
-  codeSnippets?: string;
+  sqlResult?: any;
+  codeSnippets?: any;
   pageContext?: string;
   history: ChatMessage[];
+}
+
+function formatSqlResult(sqlResult: any): string {
+  if (typeof sqlResult === 'string') return sqlResult;
+  if (!sqlResult || typeof sqlResult !== 'object') return String(sqlResult);
+
+  const { columns, rows, row_count } = sqlResult;
+  if (!columns || !rows) return JSON.stringify(sqlResult);
+
+  // Format as a readable table
+  // Rows can be arrays of arrays or arrays of objects (hashes)
+  const header = columns.join(' | ');
+  const dataRows = rows.map((row: any) => {
+    if (Array.isArray(row)) {
+      return row.map((v: any) => v === null ? 'NULL' : String(v)).join(' | ');
+    }
+    // Row is an object/hash — extract values in column order
+    return columns.map((col: string) => {
+      const v = row[col];
+      return v === null || v === undefined ? 'NULL' : String(v);
+    }).join(' | ');
+  });
+  const lines = [header, '-'.repeat(header.length), ...dataRows];
+  if (row_count !== undefined) lines.push(`\n(${row_count} row${row_count !== 1 ? 's' : ''})`);
+  return lines.join('\n');
+}
+
+function formatCodeSnippets(snippets: any): string {
+  if (typeof snippets === 'string') return snippets;
+  if (!Array.isArray(snippets)) return JSON.stringify(snippets);
+
+  return snippets.map((s: any) => `File: ${s.file}\n${s.content}`).join('\n\n');
 }
 
 export function buildAnswerMessages(input: AnswerInput): ChatCompletionMessageParam[] {
@@ -67,9 +99,9 @@ RULES:
 
   // Build context message
   let context = `Question: ${input.question}`;
-  if (input.sqlResult) context += `\n\nQuery results:\n${input.sqlResult}`;
-  if (input.codeSnippets) context += `\n\nCode snippets:\n${input.codeSnippets}`;
-  if (input.pageContext) context += `\n\nPage context:\n${input.pageContext}`;
+  if (input.sqlResult) context += `\n\nQuery results:\n${formatSqlResult(input.sqlResult)}`;
+  if (input.codeSnippets) context += `\n\nCode snippets:\n${formatCodeSnippets(input.codeSnippets)}`;
+  if (input.pageContext) context += `\n\nPage context:\n${typeof input.pageContext === 'string' ? input.pageContext : JSON.stringify(input.pageContext)}`;
 
   messages.push({ role: 'user', content: context });
   return messages;
