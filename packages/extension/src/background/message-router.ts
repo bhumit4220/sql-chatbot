@@ -82,6 +82,12 @@ function formatPageContext(ctx: PageContext): string {
   let s = `URL: ${ctx.url}\nTitle: ${ctx.title}`;
   if (ctx.heading) s += `\nHeading: ${ctx.heading}`;
   if (ctx.breadcrumbs?.length) s += `\nBreadcrumbs: ${ctx.breadcrumbs.join(' > ')}`;
+  if (ctx.navigation?.length) {
+    const navList = ctx.navigation
+      .map((n) => `- ${n.text}: ${n.href}`)
+      .join('\n');
+    s += `\n\nNavigation Links:\n${navList}`;
+  }
   return s;
 }
 

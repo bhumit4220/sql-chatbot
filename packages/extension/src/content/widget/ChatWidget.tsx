@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { extractPageData } from '../crawler/extractor.js';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -53,13 +54,22 @@ export function ChatWidget() {
     setMessages(prev => [...prev, { role: 'user', content: question }]);
     setStreaming(true);
 
-    // Get page context
+    // Crawl the live page for navigation, forms, buttons, breadcrumbs
+    const crawled = extractPageData();
+
+    // Extract breadcrumbs from common patterns
+    const breadcrumbs: string[] = [];
+    document.querySelectorAll('.breadcrumb a, .breadcrumbs a, [aria-label="breadcrumb"] a, nav ol a').forEach(el => {
+      const text = el.textContent?.trim();
+      if (text) breadcrumbs.push(text);
+    });
+
     const pageContext = {
-      url: window.location.href,
-      title: document.title,
-      heading: document.querySelector('h1')?.textContent || undefined,
-      navigation: [],
-      breadcrumbs: [],
+      url: crawled.url,
+      title: crawled.title,
+      heading: document.querySelector('h1')?.textContent?.trim() || undefined,
+      navigation: crawled.navigation,
+      breadcrumbs,
     };
 
     // Send to background worker with conversation history
