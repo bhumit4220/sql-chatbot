@@ -30,6 +30,7 @@ export class AgentClient {
       headers: {
         'Content-Type': 'application/json',
         'X-Session-Token': this.sessionToken,
+        'X-Extension-Id': this.extensionId,
         ...options.headers,
       },
     });
@@ -68,6 +69,7 @@ export class AgentClient {
       headers: {
         'Content-Type': 'application/json',
         'X-Session-Token': this.sessionToken,
+        'X-Extension-Id': this.extensionId,
       },
       body: JSON.stringify(body),
     });

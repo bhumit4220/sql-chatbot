@@ -35,7 +35,7 @@ export const authRoutes: FastifyPluginAsync = async (server) => {
     const apiKey = vault.getSecret('llmApiKey');
     if (apiKey) initLLM(apiKey);
 
-    const origin = request.headers.origin || '';
+    const origin = request.headers.origin || (request.headers['x-extension-id'] as string) || '';
     const session = sessionManager.createSession(origin);
 
     return {

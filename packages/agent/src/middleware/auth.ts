@@ -3,7 +3,8 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 export async function authMiddleware(request: FastifyRequest, reply: FastifyReply) {
   const sessionManager = (request.server as any).sessionManager;
   const token = request.headers['x-session-token'] as string;
-  const origin = request.headers.origin || '';
+  const extId = request.headers['x-extension-id'] as string | undefined;
+  const origin = request.headers.origin || (extId ? `chrome-extension://${extId}` : '') || '';
 
   if (!token) {
     return reply.status(401).send({ error: 'Missing X-Session-Token header' });

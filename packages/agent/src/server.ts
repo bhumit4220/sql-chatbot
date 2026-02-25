@@ -30,6 +30,8 @@ export async function buildServer() {
         cb(new Error('Not allowed'), false);
       }
     },
+    allowedHeaders: ['Content-Type', 'X-Session-Token', 'X-Extension-Id'],
+    exposedHeaders: ['X-New-Session-Token'],
   });
 
   // Rate limiting

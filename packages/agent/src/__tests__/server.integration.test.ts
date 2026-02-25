@@ -204,7 +204,7 @@ describe('DB Routes — SQL injection prevention (integration)', () => {
 
     // Mock inspectSchema to return a simple schema
     vi.mocked(inspectSchema).mockResolvedValue([
-      { name: 'users', columns: [{ name: 'id', type: 'integer', nullable: false }] },
+      { name: 'users', columns: [{ name: 'id', type: 'integer', nullable: false, isPrimaryKey: true }], primaryKeys: ['id'], foreignKeys: [] },
     ]);
 
     await server.register(dbRoutes, { prefix: '/db' });
