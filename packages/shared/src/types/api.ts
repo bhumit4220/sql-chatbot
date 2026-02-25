@@ -153,3 +153,65 @@ export interface DiscoveryOverrideRequest {
   column?: string;
   corrections: Record<string, string>;
 }
+
+// === V3 Cloud API Types ===
+
+export interface CloudClassifyRequest {
+  question: string;
+  schemaSummary: string;
+  pageContext?: string;
+  apiKey: string;
+}
+
+export interface CloudClassifyResponse {
+  type: import('./llm.js').QuestionType;
+  confidence: number;
+  searchTerms?: string[];  // included for code, data_with_code types
+}
+
+export interface CloudGenerateSqlRequest {
+  question: string;
+  schema: string;
+  enums: string;
+  discoveredContext: string;
+  codeContext?: string;
+  history: import('./llm.js').ChatMessage[];
+  apiKey: string;
+  retryWithContext?: {
+    originalSql: string;
+    rejectionReason: string;
+  };
+}
+
+export interface CloudGenerateSqlResponse {
+  sql: string;
+}
+
+export interface CloudAnswerRequest {
+  question: string;
+  sqlResult?: string;
+  codeSnippets?: string;
+  pageContext?: string;
+  history: import('./llm.js').ChatMessage[];
+  questionType: import('./llm.js').QuestionType;
+  apiKey: string;
+}
+
+// === V3 Middleware API Types ===
+
+export interface MiddlewareAskRequest {
+  question: string;
+  history: import('./llm.js').ChatMessage[];
+  pageContext?: string;
+}
+
+export interface MiddlewareStatusResponse {
+  version: string;
+  status: 'ready' | 'discovering' | 'error';
+  discoveryState: {
+    schema: 'pending' | 'running' | 'completed' | 'failed';
+    enums: 'pending' | 'running' | 'completed' | 'failed';
+    code: 'pending' | 'running' | 'completed' | 'failed';
+  };
+  authRequired: boolean;
+}

@@ -59,3 +59,16 @@ export const PII_COLUMN_PATTERNS = [
   'dob', 'date_of_birth', 'ssn', 'ip_address', 'password', 'token',
   'secret', 'salt', 'bank', 'card', 'stripe',
 ];
+
+// V3 Cloud
+export const CLOUD_API_BASE = process.env.CHATBOT_CLOUD_URL || 'https://api.chatbot-agent.com';
+export const CLOUD_TIMEOUT_MS = 30_000;
+export const CLOUD_RATE_LIMIT = 100; // per minute per key
+
+// V3 Middleware
+export const MIDDLEWARE_VERSION = '1.0.0';
+export const SCHEMA_CACHE_TTL_MS = 60 * 60 * 1000;  // 1 hour
+export const CODE_INDEX_TTL_MS = 24 * 60 * 60 * 1000;  // 24 hours
+export const ENUM_SAMPLE_TIMEOUT_MS = 5_000;  // 5s per table
+export const ENUM_MAX_TABLES = 100;
+export const ENUM_MAX_ROW_COUNT = 1_000_000;  // skip tables > 1M rows
