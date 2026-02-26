@@ -21,6 +21,7 @@ export async function answerRoute(req: Request, res: Response): Promise<void> {
       question, questionType, sqlResult, codeSnippets, pageContext, history: history || [],
     });
 
+
     for await (const token of streamOpenAI(messages)) {
       res.write(`data: ${JSON.stringify({ token })}\n\n`);
     }

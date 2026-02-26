@@ -9,19 +9,21 @@ module ChatbotAgent
     class TimeoutError < StandardError; end
 
     CONNECT_TIMEOUT = 5
-    READ_TIMEOUT = 30
+    READ_TIMEOUT = 60
+    MAX_BODY_BYTES = 500_000 # 500KB max request body
 
     def initialize(cloud_url: nil, api_key: nil)
       @cloud_url = cloud_url || ChatbotAgent.config.cloud_url
       @api_key = api_key || ChatbotAgent.config.api_key
     end
 
-    def classify(question:, schema_summary:, page_context: nil)
+    def classify(question:, schema_summary:, page_context: nil, history: [])
       body = {
         question: question,
         schemaSummary: schema_summary,
       }
       body[:pageContext] = page_context if page_context
+      body[:history] = history if history && !history.empty?
 
       post_json('/api/v1/classify', body)
     end
@@ -109,11 +111,34 @@ module ChatbotAgent
       request = Net::HTTP::Post.new(uri.path)
       request['Content-Type'] = 'application/json'
       request['Authorization'] = "Bearer #{@api_key}"
-      request.body = JSON.generate(body)
+      json_body = JSON.generate(body)
+
+      # Truncate oversized payloads to avoid 413 errors
+      if json_body.bytesize > MAX_BODY_BYTES
+        body = truncate_payload(body)
+        json_body = JSON.generate(body)
+      end
+
+      request.body = json_body
 
       http.request(request)
     rescue Net::OpenTimeout, Net::ReadTimeout => e
       raise TimeoutError, "Cloud service timeout: #{e.message}"
+    end
+
+    def truncate_payload(body)
+      # Truncate the largest string fields to fit within limits
+      %i[schema schemaSummary discoveredContext enums codeContext pageContext].each do |key|
+        if body[key].is_a?(String) && body[key].length > 50_000
+          body[key] = body[key][0...50_000] + "\n...(truncated)"
+        end
+      end
+      # Truncate SQL result rows if present
+      if body[:sqlResult].is_a?(Hash) && body[:sqlResult][:rows].is_a?(Array) && body[:sqlResult][:rows].length > 100
+        body[:sqlResult][:rows] = body[:sqlResult][:rows].first(100)
+        body[:sqlResult][:row_count] = "#{body[:sqlResult][:rows].length}+ (truncated)"
+      end
+      body
     end
 
     def parse_sse(body)

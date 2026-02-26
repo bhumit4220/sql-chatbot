@@ -5,7 +5,7 @@ module ChatbotAgent
     include ActionController::Live
 
     def create
-      question = params[:question]
+      question = params[:question].to_s.strip
       history = (params[:history] || []).map { |h| h.respond_to?(:to_unsafe_h) ? h.to_unsafe_h : h.to_h }
       page_context = params[:pageContext]
 
@@ -13,6 +13,13 @@ module ChatbotAgent
         render json: { error: 'question is required' }, status: :bad_request
         return
       end
+
+      if question.length > 2000
+        question = question[0...2000]
+      end
+
+      # Limit history to last 20 messages
+      history = history.last(20)
 
       orchestrator = ChatbotAgent::Orchestration::AskOrchestrator.new(
         pipeline: ChatbotAgent.pipeline,

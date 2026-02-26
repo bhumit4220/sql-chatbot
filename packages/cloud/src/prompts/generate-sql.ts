@@ -25,6 +25,10 @@ RULES:
 - Use the provided schema, enum mappings, and discovered context to write accurate SQL.
 - If enum values have labels (e.g., status: 1=Active), use the integer value in WHERE clauses, not the label text.
 - Trust the discovered context — it contains auto-detected rules about this specific database.
+- IMPORTANT: Only use column names that actually exist in the provided schema. Check the schema carefully before writing the query. Never guess column names.
+- When querying about specific entities (people, places, items), always include human-readable columns alongside IDs. Check the schema for columns like first_name, last_name, email, title, description, address — use whatever descriptive columns actually exist. An admin needs to see WHO or WHAT, not just an ID.
+- CRITICAL: When grouping by or selecting a foreign key ID (like job_type_id, contractor_id, customer_id, property_id), ALWAYS JOIN to the referenced table and SELECT a human-readable column (e.g., title, first_name, email) instead of returning raw IDs. Never return a bare ID column as a result — always resolve it to a name/title via JOIN.
+- Unless the user specifically asks for all records including deleted, ALWAYS exclude deleted records (status != 3) in WHERE clauses. This applies to ALL tables that have a status column.
 
 Respond with JSON only: {"sql": "SELECT ..."}`;
 

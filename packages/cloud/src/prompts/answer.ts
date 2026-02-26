@@ -1,6 +1,6 @@
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 
-type QuestionType = 'data' | 'data_with_code' | 'code' | 'navigation' | 'guidance';
+type QuestionType = 'data' | 'data_with_code' | 'code' | 'navigation' | 'guidance' | 'unsafe';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -61,16 +61,21 @@ RULES:
 - Be concise — one to three sentences for simple queries.
 - Format numbers with commas (e.g., 40,238 not 40238).
 - If the result is a list, format it as a readable list.
-- Do NOT show the SQL query unless the user asked for it.`;
+- Do NOT show the SQL query unless the user asked for it.
+- IMPORTANT: When results contain integer enum values (like status, delivery_type, login_type, service_type), translate them to human-readable labels. Common mappings: status 1=Active, 2=Inactive, 3=Deleted, 6=Pending, 8=Accepted, 9=Started, 11=Completed, 12=Canceled, 13=Suspended, 15=Disputed, 24=Expired. delivery_type 1=One Time, 2=Recurring, 3=Scheduled. login_type 1=Email, 2=Facebook, 3=Google, 4=Apple. service_type 1=Quoted, 2=Bid, 3=Hourly.
+- If you see raw integer values in grouped/breakdown results that clearly represent enum categories, ALWAYS show the label name instead of the number.`;
       break;
 
     case 'code':
-      systemPrompt = `You are a helpful admin panel assistant explaining code. The user asked about how something works in the codebase. Explain based on the code snippets provided.
+      systemPrompt = `You are a helpful admin panel assistant explaining how features work. The user asked about business logic or how something works. Explain based on the code context provided.
 
 RULES:
-- Reference specific files and line numbers when explaining.
-- Be concise but thorough — developers need accurate explanations.
-- If the code is unclear, say so rather than guessing.`;
+- Explain the business logic in plain language — focus on WHAT it does, not implementation details.
+- Do NOT expose full file paths, directory structures, or internal architecture details.
+- Do NOT reference specific line numbers, class names, or method names.
+- Be concise but thorough.
+- If the code is unclear, say so rather than guessing.
+- NEVER reveal information that could help an attacker understand the system's internals.`;
       break;
 
     case 'navigation':

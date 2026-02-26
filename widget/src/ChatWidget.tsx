@@ -105,16 +105,28 @@ export function ChatWidget({ apiKey, apiUrl, position }: Props) {
     try {
       const pageContext = getPageContext()
 
-      const resp = await fetch(`${apiUrl}/api/v1/chat/stream`, {
+      // Get CSRF token for same-origin Rails requests
+      const csrfMeta = document.querySelector('meta[name="csrf-token"]')
+      const csrfToken = csrfMeta?.getAttribute('content') || ''
+
+      // Build history from previous messages
+      const history = messages.map(m => ({
+        role: m.role,
+        content: m.content,
+      }))
+
+      const resp = await fetch(`${apiUrl}/chatbot/ask`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-API-Key': apiKey,
+          'X-CSRF-Token': csrfToken,
         },
+        credentials: 'same-origin',
         body: JSON.stringify({
           question,
-          session_id: sessionId.current,
-          page_context: pageContext,
+          history,
+          pageContext: pageContext,
         }),
       })
 
@@ -141,8 +153,10 @@ export function ChatWidget({ apiKey, apiUrl, position }: Props) {
           if (line.startsWith('event: ')) {
             currentEvent = line.slice(7).trim()
           } else if (line.startsWith('data: ')) {
+            const rawData = line.slice(6)
+            if (rawData === '[DONE]') break
             try {
-              const data = JSON.parse(line.slice(6))
+              const data = JSON.parse(rawData)
               switch (currentEvent) {
                 case 'message':
                   if (data.token) {
@@ -153,6 +167,17 @@ export function ChatWidget({ apiKey, apiUrl, position }: Props) {
                         role: 'assistant',
                         content: assistantMsg,
                         sql: currentSql || undefined,
+                      }
+                      return updated
+                    })
+                  } else if (data.error) {
+                    // Handle inline error (no event: prefix from Rails)
+                    assistantMsg = data.error
+                    setMessages(prev => {
+                      const updated = [...prev]
+                      updated[updated.length - 1] = {
+                        role: 'assistant',
+                        content: assistantMsg,
                       }
                       return updated
                     })

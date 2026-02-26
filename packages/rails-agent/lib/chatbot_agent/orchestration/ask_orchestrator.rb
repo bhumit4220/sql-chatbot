@@ -20,16 +20,19 @@ module ChatbotAgent
       def ask(question:, history:, page_context: nil, &block)
         return not_ready_response unless @pipeline.ready?
 
-        # Step 1: Classify the question
+        # Step 1: Classify the question (include history for follow-up context)
         classification = @cloud_client.classify(
           question: question,
           schema_summary: build_schema_summary,
           page_context: page_context,
+          history: history,
         )
         question_type = classification['type']
 
         # Step 2: Branch by type
         case question_type
+        when 'unsafe'
+          handle_unsafe_question(&block)
         when 'data'
           handle_data_question(question: question, history: history, page_context: page_context, &block)
         when 'data_with_code'
@@ -49,38 +52,57 @@ module ChatbotAgent
 
       private
 
+      UNSAFE_RESPONSE = "I'm sorry, I can only help with questions about the admin panel — such as data lookups, navigation, and how features work. I can't process that request."
+
+      MAX_EXEC_RETRIES = 1
+
+      def handle_unsafe_question(&block)
+        yield UNSAFE_RESPONSE if block_given?
+        { status: :refused, type: 'unsafe', message: UNSAFE_RESPONSE }
+      end
+
       def handle_data_question(question:, history:, page_context:, code_context: nil, type_label: 'data', &block)
-        # Generate SQL
-        sql_response = generate_sql_with_retry(
-          question: question, history: history, code_context: code_context,
-        )
-        return sql_response if sql_response[:status] == :error
+        exec_retry_context = nil
 
-        sql = sql_response[:sql]
+        (MAX_EXEC_RETRIES + 1).times do
+          # Generate SQL (with optional execution error context for retry)
+          sql_response = generate_sql_with_retry(
+            question: question, history: history, code_context: code_context,
+            exec_error_context: exec_retry_context,
+          )
+          return sql_response if sql_response[:status] == :error
 
-        # Execute SQL
-        exec_result = @sql_executor.call(sql)
-        unless exec_result[:success]
-          return { status: :error, type: type_label, message: "SQL execution failed: #{exec_result[:error]}" }
+          sql = sql_response[:sql]
+          # Execute SQL
+          exec_result = @sql_executor.call(sql)
+          if exec_result[:success]
+            # Stream answer
+            sql_result = {
+              columns: exec_result[:columns],
+              rows: exec_result[:rows],
+              row_count: exec_result[:row_count],
+            }
+
+            @cloud_client.stream_answer(
+              question: question,
+              question_type: type_label,
+              history: history,
+              sql_result: sql_result,
+              page_context: page_context,
+              &block
+            )
+
+            return { status: :success, type: type_label, sql: sql, data: exec_result }
+          end
+
+          # Set up execution error retry context
+          exec_retry_context = {
+            failed_sql: sql,
+            execution_error: exec_result[:error],
+          }
         end
 
-        # Stream answer
-        sql_result = {
-          columns: exec_result[:columns],
-          rows: exec_result[:rows],
-          row_count: exec_result[:row_count],
-        }
-
-        @cloud_client.stream_answer(
-          question: question,
-          question_type: type_label,
-          history: history,
-          sql_result: sql_result,
-          page_context: page_context,
-          &block
-        )
-
-        { status: :success, type: type_label, sql: sql, data: exec_result }
+        { status: :error, type: type_label, message: "SQL execution failed: #{exec_retry_context[:execution_error]}" }
       end
 
       def handle_data_with_code_question(question:, history:, page_context:, &block)
@@ -119,8 +141,15 @@ module ChatbotAgent
         { status: :success, type: question_type }
       end
 
-      def generate_sql_with_retry(question:, history:, code_context:)
+      def generate_sql_with_retry(question:, history:, code_context:, exec_error_context: nil)
         retry_context = nil
+        # If we have an execution error from a previous attempt, seed the retry context
+        if exec_error_context
+          retry_context = {
+            original_sql: exec_error_context[:failed_sql],
+            rejection_reason: "Database execution error: #{exec_error_context[:execution_error]}. Fix the SQL to use correct column/table names.",
+          }
+        end
 
         (MAX_SQL_RETRIES + 1).times do |attempt|
           sql_response = @cloud_client.generate_sql(
@@ -156,7 +185,11 @@ module ChatbotAgent
         )
         return nil if results.empty?
 
-        results.map { |r| { file: r[:file], content: r[:content] } }
+        results.map do |r|
+          # Sanitize: only expose filename, not full path
+          basename = File.basename(r[:file])
+          { file: basename, content: r[:content] }
+        end
       rescue => _e
         nil
       end
@@ -165,10 +198,13 @@ module ChatbotAgent
         schema = @pipeline.results[:schema]
         return '' unless schema
 
-        schema.map do |table|
+        summary = schema.map do |table|
           cols = table[:columns]&.map { |c| c[:name] }&.join(', ') || ''
           "#{table[:table]}(#{cols})"
         end.join('; ')
+
+        # Truncate if too large (prevents 413 on classify)
+        summary.length > 60_000 ? summary[0...60_000] + '...' : summary
       end
 
       def build_enum_string
@@ -179,28 +215,29 @@ module ChatbotAgent
       end
 
       def build_discovered_context
-        models = @pipeline.results[:models]
-        return '' unless models
-
         lines = []
-        models.each do |model_name, info|
-          next unless info.is_a?(Hash)
 
-          associations = info[:associations] || []
-          associations.each do |assoc|
-            fk = assoc[:options]&.dig(:foreign_key)
-            if fk
-              lines << "#{model_name} belongs_to #{assoc[:name]} via foreign key '#{fk}'"
+        models = @pipeline.results[:models]
+        if models
+          models.each do |model_name, info|
+            next unless info.is_a?(Hash)
+
+            associations = info[:associations] || []
+            associations.each do |assoc|
+              fk = assoc[:options]&.dig(:foreign_key)
+              if fk
+                lines << "#{model_name} belongs_to #{assoc[:name]} via foreign key '#{fk}'"
+              end
             end
-          end
 
-          scopes = info[:default_scopes] || []
-          scopes.each do |scope|
-            lines << "#{model_name} has default_scope: #{scope}"
-          end
+            scopes = info[:default_scopes] || []
+            scopes.each do |scope|
+              lines << "#{model_name} has default_scope: #{scope}"
+            end
 
-          if info[:soft_delete]
-            lines << "#{model_name} uses soft delete (paranoia)"
+            if info[:soft_delete]
+              lines << "#{model_name} uses soft delete (paranoia)"
+            end
           end
         end
 

@@ -16,7 +16,8 @@ module ChatbotAgent
 
       BLOCKED_SYSTEM_TABLES = %w[
         pg_stat_activity pg_roles pg_shadow pg_authid
-        pg_user pg_group
+        pg_user pg_group pg_database pg_tablespace
+        pg_settings pg_hba_file_rules pg_config
       ].freeze
 
       class << self
@@ -74,6 +75,9 @@ module ChatbotAgent
           end
           if sql_lower.include?('information_schema')
             return invalid('Blocked system catalog: information_schema')
+          end
+          if sql_lower.include?('pg_catalog')
+            return invalid('Blocked system catalog: pg_catalog')
           end
 
           # Layer 7: Add LIMIT if missing

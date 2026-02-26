@@ -1,0 +1,1 @@
+/home/sotsys-322/Ruby Projects/sql-chatbot/widget/dist/widget.js
