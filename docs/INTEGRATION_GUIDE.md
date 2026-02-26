@@ -1,5 +1,9 @@
 # SQL Chatbot — Developer Integration Guide
 
+> **NOTE:** This guide is for the V2 (FastAPI/Docker) architecture. V3 uses a different architecture:
+> Rails gem (`chatbot_agent`) mounted in customer's app + Cloud LLM service (Node.js/Express).
+> See `docs/plans/2026-02-25-v3-implementation-plan.md` for V3 details and progress.
+
 > How to integrate the SQL Chatbot into any new project, from zero to full integration.
 
 ## Prerequisites

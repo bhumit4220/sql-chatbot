@@ -1601,3 +1601,42 @@ Phases 2 and 6 can run **in parallel** (cloud service and extension have no code
 | 7 | 4 | Extension modes (data, data+code, code, nav/guidance) |
 | 8 | 2 | E2E (mount in MSP + 20-question test) |
 | **Total** | **33** | |
+
+---
+
+## Implementation Progress
+
+### Status: V3 Hardening Complete (Session 4 — 2026-02-26)
+
+**Branch:** `v3-development` (38 commits, last: `7110375`)
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| 1 — Setup | DONE | v3-development branch, pnpm workspace, cloud + rails-agent scaffolds |
+| 2 — Cloud Service | DONE | classify, generate-sql, answer endpoints + auth + streaming |
+| 3 — Rails Core | DONE | Config, Devise auth, schema discovery, SQL execution, cloud client |
+| 4 — Rails Discovery | DONE | Enum sampling, label inference, model parser, code indexer, pipeline |
+| 5 — Rails Orchestration | DONE | /chatbot/ask controller, SSE streaming, orchestrator with retry loops |
+| 6 — Extension/Widget | DONE | Converted from Chrome Extension to IIFE widget (shadow DOM), Vite build |
+| 7 — Modes | DONE | Data, data+code, code, navigation/guidance, unsafe (security) |
+| 8 — E2E Testing | DONE | Mounted in MSP, all tests passing (see below) |
+
+### Session 4 Hardening Results (2026-02-26)
+
+**Security (10/10 adversarial inputs BLOCKED):**
+- SQL injection, pg_shadow, pg_sleep, prompt injection, pg_catalog, DELETE, UPDATE, information_schema, jailbreak, UNION SELECT
+
+**Data Accuracy (all verified against DB):**
+- Customer counts, contractor counts, job type queries, follow-up questions, relative questions — all match database
+
+**Features Added in Hardening:**
+- "unsafe" classification type for adversarial inputs
+- Conversation history passed to classifier (follow-up questions work)
+- Mandatory JOIN for FK columns (human-readable names instead of IDs)
+- Mandatory deleted record exclusion (status != 3)
+- Execution error retry (feeds DB errors back to LLM for corrected query)
+- Code path sanitization (no file paths/internals leaked)
+- Payload truncation (prevents 413 errors)
+
+**Edge Cases Handled:**
+- Empty input, emoji, special characters, long input, rapid-fire — all handled without crashes
