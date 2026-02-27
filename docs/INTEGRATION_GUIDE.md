@@ -1,335 +1,376 @@
-# SQL Chatbot — Developer Integration Guide
+# sql-chatbot-agent: Production Integration Guide
 
-> How to integrate the SQL Chatbot into any new project, from zero to full integration.
+How to add the AI chatbot to your live project server.
 
-## Prerequisites
+## Table of Contents
 
-- Docker & Docker Compose installed
-- PostgreSQL database (the target database you want to query)
-- A web application with an admin panel (for widget embedding)
-
----
-
-## Step 1: Deploy the Chatbot Stack
-
-Clone and start the chatbot API, Redis, and chatbot PostgreSQL database:
-
-```bash
-cd "/path/to/sql-chatbot"
-docker compose up -d --build
-```
-
-This starts three containers:
-- **sql-chatbot-api** — FastAPI app on `http://localhost:8000`
-- **sql-chatbot-redis** — Redis on port 6380
-- **sql-chatbot-db** — PostgreSQL (chatbot's own DB) on port 5433
-
-Verify it's running:
-
-```bash
-curl http://localhost:8000/health
-# {"status":"ok"}
-```
+- [Option A: Standalone Server (Recommended)](#option-a-standalone-server-recommended)
+- [Option B: Express Middleware](#option-b-express-middleware)
+- [Choosing a Provider](#choosing-a-provider)
+- [Production Deployment](#production-deployment)
+- [Security Checklist](#security-checklist)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
-## Step 2: Create an Admin Account
+## Option A: Standalone Server (Recommended)
 
-Register as an admin (owner role is created automatically for the first user):
+Run the chatbot as a separate service alongside your existing app. No code changes to your project needed.
+
+### Step 1: Install
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/auth/register \
+npm install -g sql-chatbot-agent
+```
+
+Or use `npx` without installing (shown below).
+
+### Step 2: Get an API Key
+
+Pick a provider and get a key:
+
+| Provider | Get Key At | Free? |
+|----------|-----------|-------|
+| **OpenRouter** | https://openrouter.ai/keys | Yes (50 req/day, 1000/day with $10 credit) |
+| **Groq** | https://console.groq.com | Yes (100K tokens/day) |
+| **Ollama** | https://ollama.com (install locally) | Yes (unlimited, runs on your machine) |
+| **OpenAI** | https://platform.openai.com | No (pay-per-use) |
+
+### Step 3: Set Environment Variables
+
+```bash
+# Required
+export DATABASE_URL="postgresql://user:password@your-db-host:5432/your_database"
+
+# Pick ONE of these depending on your provider:
+export OPENROUTER_API_KEY="sk-or-v1-xxx"   # OpenRouter
+# OR
+export LLM_API_KEY="gsk_xxx"               # Groq
+# OR
+export LLM_API_KEY="sk-xxx"                # OpenAI
+
+# Recommended for production
+export CHATBOT_SECRET="a-long-random-string-here"
+```
+
+### Step 4: Start the Server
+
+```bash
+# OpenRouter (default)
+npx sql-chatbot-agent --db "$DATABASE_URL" --code /path/to/your/project/src
+
+# Groq
+npx sql-chatbot-agent --db "$DATABASE_URL" --provider groq --code /path/to/your/project/src
+
+# Ollama (local)
+npx sql-chatbot-agent --db "$DATABASE_URL" --provider ollama --code /path/to/your/project/src
+
+# Custom port
+npx sql-chatbot-agent --db "$DATABASE_URL" --code ./src --port 4000
+```
+
+You should see:
+
+```
+SQL Chatbot Agent running at http://localhost:3456
+  Provider:     openrouter
+  Chat widget:  http://localhost:3456
+  Health check: http://localhost:3456/chatbot/api/health
+  Auth: enabled
+```
+
+### Step 5: Add Widget to Your Frontend
+
+Add this single script tag to your HTML (e.g., in your layout/index file):
+
+```html
+<!-- Before </body> tag -->
+<script src="http://your-server-ip:3456/chatbot/widget.js"></script>
+```
+
+If your chatbot is on the same domain behind a reverse proxy:
+
+```html
+<script src="/chatbot/widget.js"></script>
+```
+
+A chat bubble will appear in the bottom-right corner of your page. That's it.
+
+### Step 6: Verify
+
+```bash
+# Check health
+curl http://localhost:3456/chatbot/api/health
+# Returns: {"status":"ok","tables":25,"codeFiles":150}
+
+# Test a question (without auth)
+curl -N http://localhost:3456/chatbot/api/ask \
   -H "Content-Type: application/json" \
-  -d '{"email": "admin@yourcompany.com", "password": "YourSecurePassword123"}'
-```
+  -d '{"question":"How many users are there?"}'
 
-Then log in to get a JWT token:
-
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/login \
+# Test with auth (if secret is set)
+curl -N http://localhost:3456/chatbot/api/ask \
   -H "Content-Type: application/json" \
-  -d '{"email": "admin@yourcompany.com", "password": "YourSecurePassword123"}'
-```
-
-Save the `access_token` from the response — you'll need it for all subsequent API calls.
-
-```bash
-export TOKEN="your_access_token_here"
+  -H "Authorization: Bearer your-secret-token" \
+  -d '{"question":"How many users are there?"}'
 ```
 
 ---
 
-## Step 3: Create a Project with Your Database Connection
+## Option B: Express Middleware
 
-A "project" connects the chatbot to your target database:
+Embed the chatbot directly into your existing Express/Node.js app.
+
+### Step 1: Install
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/projects \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "My App",
-    "connection_string": "postgresql+asyncpg://user:pass@host:5432/dbname",
-    "allowed_tables": null,
-    "blocked_tables": ["admin_users", "sessions", "ar_internal_metadata", "schema_migrations"]
-  }'
+npm install sql-chatbot-agent
 ```
 
-**Important notes:**
-- The connection string must use `postgresql+asyncpg://` prefix (async driver)
-- If your database is on the host machine and the chatbot runs in Docker, use the Docker bridge IP (typically `172.19.0.1` or `172.17.0.1`) instead of `localhost`
-- `blocked_tables` excludes sensitive tables from auto-discovery and queries
-- The connection string is encrypted at rest using Fernet encryption
+### Step 2: Add to Your App
 
-Save the `id` from the response — this is your `project_id`.
+```javascript
+const express = require('express');
+const { sqlChatbot } = require('sql-chatbot-agent');
+
+const app = express();
+
+// Mount the chatbot at /chatbot
+app.use('/chatbot', sqlChatbot({
+  databaseUrl: process.env.DATABASE_URL,
+  provider: 'openrouter',                    // or 'groq', 'ollama', 'openai'
+  llmApiKey: process.env.OPENROUTER_API_KEY,  // or LLM_API_KEY
+  codePaths: ['./app', './src'],              // directories with your source code
+  secret: process.env.CHATBOT_SECRET,         // optional, recommended for production
+}));
+
+// Your other routes...
+app.get('/', (req, res) => res.send('My App'));
+
+app.listen(3000);
+```
+
+### Step 3: Add Widget to Your HTML
+
+```html
+<script src="/chatbot/widget.js"></script>
+```
+
+### Endpoints Created
+
+| Path | Description |
+|------|-------------|
+| `GET /chatbot/widget.js` | Chat widget JavaScript bundle |
+| `POST /chatbot/api/ask` | Main chat endpoint (SSE streaming) |
+| `GET /chatbot/api/health` | Health check (table count, code file count) |
+| `POST /chatbot/api/refresh` | Re-discover schema and re-index code |
 
 ---
 
-## Step 4: Trigger Auto-Discovery
+## Choosing a Provider
 
-Auto-discovery scans your database schema (tables, columns, types, foreign keys, constraints, indexes, comments) and samples data to detect enum-like patterns:
+### OpenRouter (Recommended for Getting Started)
+
+- **Cost:** Free (50 requests/day). Add $10 credit for 1000/day. Credit is NOT consumed by free models.
+- **Quality:** Routes across multiple free models automatically
+- **Setup:** Get key at https://openrouter.ai/keys
+- **Env var:** `OPENROUTER_API_KEY`
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/projects/{project_id}/discovery/run \
-  -H "Authorization: Bearer $TOKEN"
+export OPENROUTER_API_KEY=sk-or-v1-xxx
+npx sql-chatbot-agent --db "$DATABASE_URL" --code ./src
 ```
 
-This creates `schema_documents` in the vector store — the chatbot uses these via RAG (Retrieval-Augmented Generation) to understand your database structure when generating SQL.
+### Groq (Best Free Quality)
 
-Check discovery status:
+- **Cost:** Free (100K tokens/day, ~30-50 chatbot questions)
+- **Quality:** High -- uses Llama 3.3 70B
+- **Setup:** Get key at https://console.groq.com
+- **Env var:** `LLM_API_KEY` or `GROQ_API_KEY`
 
 ```bash
-curl http://localhost:8000/api/v1/projects/{project_id}/discovery/status \
-  -H "Authorization: Bearer $TOKEN"
+export LLM_API_KEY=gsk_xxx
+npx sql-chatbot-agent --db "$DATABASE_URL" --provider groq --code ./src
+```
+
+### Ollama (Best for Production / Unlimited)
+
+- **Cost:** Free, unlimited (uses your server's GPU/CPU)
+- **Quality:** Depends on model and hardware
+- **Setup:** Install Ollama, pull a model
+
+```bash
+# On your server
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull llama3.1:8b
+ollama serve
+
+# Then run chatbot
+npx sql-chatbot-agent --db "$DATABASE_URL" --provider ollama --code ./src
+```
+
+### OpenAI (Best Quality, Paid)
+
+- **Cost:** ~$0.15 per 1M input tokens, ~$0.60 per 1M output tokens (gpt-4o-mini)
+- **Quality:** Highest
+- **Env var:** `LLM_API_KEY`
+
+```bash
+export LLM_API_KEY=sk-xxx
+npx sql-chatbot-agent --db "$DATABASE_URL" --provider openai --code ./src
 ```
 
 ---
 
-## Step 5: Generate an API Key for the Widget
+## Production Deployment
 
-The embedded widget authenticates via an API key (not JWT):
+### Using PM2 (Process Manager)
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/projects/{project_id}/api-keys \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Production Widget"}'
+npm install -g pm2
+
+# Start
+pm2 start "npx sql-chatbot-agent --db $DATABASE_URL --code ./src --secret $CHATBOT_SECRET" --name chatbot
+
+# Auto-restart on crash + persist across reboots
+pm2 save
+pm2 startup
 ```
 
-**Save the `raw_key` from the response immediately** — it is shown only once. The key is stored as a SHA-256 hash and cannot be retrieved later.
+### Using systemd
 
----
+Create `/etc/systemd/system/sql-chatbot.service`:
 
-## Step 6: Seed Semantic Context (Business Knowledge)
+```ini
+[Unit]
+Description=SQL Chatbot Agent
+After=network.target postgresql.service
 
-Auto-discovery learns your schema structure, but it cannot know the *meaning* of your data. For example, if your `users` table has `status = 1` meaning "Active", the chatbot needs to be told this.
+[Service]
+Type=simple
+User=your-user
+WorkingDirectory=/path/to/your/project
+Environment=DATABASE_URL=postgresql://user:pass@localhost:5432/mydb
+Environment=OPENROUTER_API_KEY=sk-or-v1-xxx
+Environment=CHATBOT_SECRET=your-secret-here
+ExecStart=/usr/bin/npx sql-chatbot-agent --code ./src
+Restart=always
+RestartSec=10
 
-Create a JSON file (e.g., `semantic_context.json`) with your business knowledge:
+[Install]
+WantedBy=multi-user.target
+```
 
-```json
-{
-  "enum_mappings": [
-    {
-      "table": "users",
-      "column": "status",
-      "mappings": {"1": "Active", "2": "Inactive", "3": "Deleted"},
-      "description": "User account status. Active = registered and usable. Deleted = soft-deleted, exclude by default."
-    }
-  ],
-  "column_descriptions": [
-    {
-      "table": "orders",
-      "column": "created_by",
-      "description": "Foreign key to users table (the user who placed the order). This is the user FK, NOT a column called user_id.",
-      "synonyms": ["user_id", "customer"]
-    }
-  ],
-  "business_rules": [
-    {
-      "title": "Soft Delete Rule",
-      "rule": "All models use soft deletes via status=3. Always exclude status=3 unless explicitly asked for deleted records.",
-      "tables": ["users", "orders", "products"],
-      "sql_filter": "status != 3"
-    }
-  ],
-  "verified_queries": [
-    {
-      "question": "How many active users are there?",
-      "sql": "SELECT COUNT(*) FROM users WHERE status = 1",
-      "explanation": "Active = status 1. Excludes soft-deleted (status=3)."
-    }
-  ],
-  "metric_definitions": [
-    {
-      "name": "Total Revenue",
-      "sql_expression": "SUM(orders.total_amount)",
-      "description": "Sum of all order totals",
-      "tables": ["orders"]
-    }
-  ]
+```bash
+sudo systemctl enable sql-chatbot
+sudo systemctl start sql-chatbot
+sudo journalctl -u sql-chatbot -f  # view logs
+```
+
+### Using Docker
+
+```dockerfile
+FROM node:20-slim
+RUN npm install -g sql-chatbot-agent
+WORKDIR /app
+COPY ./src ./src
+CMD ["sql-chatbot-agent", "--code", "./src"]
+```
+
+```bash
+docker run -d \
+  -e DATABASE_URL="postgresql://user:pass@host:5432/db" \
+  -e OPENROUTER_API_KEY="sk-or-v1-xxx" \
+  -e CHATBOT_SECRET="your-secret" \
+  -p 3456:3456 \
+  your-chatbot-image
+```
+
+### Nginx Reverse Proxy
+
+To serve the chatbot on the same domain as your app:
+
+```nginx
+# In your nginx server block
+location /chatbot/ {
+    proxy_pass http://127.0.0.1:3456/chatbot/;
+    proxy_http_version 1.1;
+    proxy_set_header Connection '';
+    proxy_buffering off;           # Required for SSE streaming
+    proxy_cache off;
+    proxy_read_timeout 300s;       # LLM responses can be slow
 }
 ```
 
-Import it via the batch endpoint (replaces all semantic entries each time):
-
-```bash
-curl -X POST http://localhost:8000/api/v1/projects/{project_id}/knowledge/semantic-context \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d @semantic_context.json
-```
-
-**Categories explained:**
-| Category | Purpose | When to Use |
-|----------|---------|-------------|
-| `enum_mappings` | Maps integer values to human labels | Any column that stores integer codes (status, type, role, etc.) |
-| `column_descriptions` | Explains non-obvious column names | Abbreviated columns (`serv_type`), misleading FKs (`created_by` instead of `user_id`) |
-| `business_rules` | Default filters and logic | Soft deletes, "completed" = multiple statuses, stale cache columns to avoid |
-| `verified_queries` | Known-good SQL for common questions | Your top 5-10 most-asked dashboard questions |
-| `metric_definitions` | Standard calculations | Revenue formulas, KPI definitions, aggregation rules |
-
-**Tip:** Start with enum_mappings and business_rules — these have the biggest impact on accuracy. Add verified_queries for your most common questions. You can re-run the import any time to update.
-
----
-
-## Step 7: Add Navigation Knowledge (Optional)
-
-If you want the chatbot to answer "where do I find X?" questions about your admin panel, add navigation entries:
-
-```bash
-curl -X POST http://localhost:8000/api/v1/projects/{project_id}/knowledge \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "category": "navigation",
-    "title": "Users Page",
-    "content": "Go to Users in the left sidebar to see all registered users. You can filter by status, search by name/email, and export to CSV.",
-    "url": "/admin/users"
-  }'
-```
-
-Repeat for each page/feature in your admin panel.
-
----
-
-## Step 8: Embed the Widget
-
-Add this single script tag to your admin layout (before `</body>`):
+Then your widget tag becomes:
 
 ```html
-<script
-  src="http://localhost:8000/static/widget/chatbot-widget.js"
-  data-api-url="http://localhost:8000"
-  data-api-key="YOUR_RAW_API_KEY_HERE"
-  data-position="bottom-right"
-  data-chatbot-id="my-app-chatbot"
-></script>
+<script src="/chatbot/widget.js"></script>
 ```
-
-**Attributes:**
-
-| Attribute | Required | Description |
-|-----------|----------|-------------|
-| `data-api-url` | Yes | Base URL of the chatbot API |
-| `data-api-key` | Yes | The raw API key from Step 5 |
-| `data-position` | No | `bottom-right` (default) or `bottom-left` |
-| `data-chatbot-id` | No | Unique ID if embedding multiple widgets |
-
-The widget:
-- Renders as a floating chat bubble in the corner
-- Runs inside a Shadow DOM (isolated from your app's CSS)
-- Streams responses via Server-Sent Events (SSE)
-- Requires no npm dependencies — it's a single vanilla JS file
 
 ---
 
-## Step 9: Test and Verify
+## Security Checklist
 
-Open your admin panel and click the chat widget. Try these types of questions:
-
-1. **Data questions**: "How many active users are there?" — should generate SQL and return a number
-2. **Detail questions**: "Show me the last 5 orders" — should return names and details, not just IDs
-3. **Navigation questions**: "Where can I manage users?" — should point to the admin page
-4. **Help questions**: "What can you do?" — should list capabilities
-5. **Action requests**: "Delete user #123" — should refuse (read-only) and redirect to the relevant page
-
-If answers are wrong:
-- **Wrong enum values**: Add/fix entries in `enum_mappings`
-- **Wrong JOIN path**: Add a `business_rule` explaining the correct join
-- **Wrong column name**: Add a `column_description` with synonyms
-- **Consistently wrong SQL for a common question**: Add a `verified_query`
-
----
-
-## Architecture Overview
-
-```
-┌─────────────────┐     ┌──────────────────────────────────────────┐
-│  Your Admin App  │     │           SQL Chatbot Stack              │
-│                  │     │                                          │
-│  ┌────────────┐  │     │  ┌─────────┐  ┌───────┐  ┌───────────┐ │
-│  │  Widget JS  │──────────│ FastAPI  │──│ Redis │  │ Chatbot   │ │
-│  │  (Shadow   │  │SSE  │  │  API    │  │(cache)│  │ PostgreSQL│ │
-│  │   DOM)     │  │     │  └────┬────┘  └───────┘  │ (pgvector)│ │
-│  └────────────┘  │     │       │                   └───────────┘ │
-│                  │     │       │ Read-only SQL                    │
-└─────────────────┘     │       ▼                                  │
-                        │  ┌─────────┐                             │
-                        │  │ Your DB │ (PostgreSQL)                │
-                        │  └─────────┘                             │
-                        └──────────────────────────────────────────┘
-```
-
-**Flow:**
-1. User types question in widget
-2. Widget sends question to API via SSE stream
-3. API classifies question (data vs guidance)
-4. For data: RAG retrieves relevant schema docs → LLM generates SQL → SQL executed read-only → LLM formats answer
-5. For guidance: Knowledge base entries used to answer navigation/how-to questions
-6. Streamed response displayed in widget
-
----
-
-## Quick Reference
-
-| Action | Endpoint | Method |
-|--------|----------|--------|
-| Register admin | `/api/v1/auth/register` | POST |
-| Login | `/api/v1/auth/login` | POST |
-| Create project | `/api/v1/projects` | POST |
-| Run discovery | `/api/v1/projects/{id}/discovery/run` | POST |
-| Create API key | `/api/v1/projects/{id}/api-keys` | POST |
-| Import semantic context | `/api/v1/projects/{id}/knowledge/semantic-context` | POST |
-| Add knowledge entry | `/api/v1/projects/{id}/knowledge` | POST |
-| List knowledge entries | `/api/v1/projects/{id}/knowledge` | GET |
-| Chat (SSE stream) | `/api/v1/conversations/{id}/messages/stream` | POST |
-| Health check | `/health` | GET |
+- [ ] **Set a secret token** -- `--secret` or `CHATBOT_SECRET` env var. Without it, anyone can query your database.
+- [ ] **Never hardcode API keys** in source code. Always use environment variables.
+- [ ] **Add `chatbot.config.json` to `.gitignore`** -- the `init` command does this automatically.
+- [ ] **Use HTTPS** in production (via reverse proxy like Nginx/Caddy).
+- [ ] **SQL is read-only** -- all queries run inside `SET TRANSACTION READ ONLY`. Destructive keywords (`DROP`, `DELETE`, etc.) are blocked.
+- [ ] **Sensitive columns are hidden** -- columns matching patterns like `password`, `secret`, `api_key`, `ssn` are automatically excluded from the schema sent to the LLM.
 
 ---
 
 ## Troubleshooting
 
-**Docker can't reach host PostgreSQL:**
-Your host PostgreSQL must listen on the Docker bridge IP. Check with:
+### "Error: API key is required"
+
+You need to provide an API key. Set one of:
+- `OPENROUTER_API_KEY` (get free at https://openrouter.ai/keys)
+- `LLM_API_KEY` or `GROQ_API_KEY`
+- Or use `--provider ollama` (no key needed, but requires Ollama running locally)
+
+### "429 Rate limit exceeded: free-models-per-day"
+
+OpenRouter free tier is 50 requests/day without credits. Each chatbot question uses 2-3 API calls (classify + SQL + answer), so that's ~16-25 questions/day.
+
+**Options:**
+- Add $10 credit at https://openrouter.ai/settings/credits (unlocks 1000/day, credit NOT consumed by free models)
+- Switch to Groq: `--provider groq --key gsk_xxx`
+- Use Ollama locally: `--provider ollama` (unlimited)
+
+### "Error: Ollama is not running"
+
 ```bash
-docker network inspect sql-chatbot_default | grep Gateway
-```
-Then add that IP to `listen_addresses` in `postgresql.conf` and add a line to `pg_hba.conf`:
-```
-host all all 172.19.0.0/16 md5
-```
-Restart PostgreSQL after changes.
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
 
-**Widget not appearing:**
-- Check browser console for errors
-- Verify the `data-api-url` is reachable from the browser
-- Verify the API key is correct (401 errors = bad key)
+# Pull a model and start
+ollama pull llama3.1:8b
+ollama serve
+```
 
-**Wrong SQL results:**
-- Add more `enum_mappings` for integer-coded columns
-- Add `business_rules` for default filters (soft deletes, completion statuses)
-- Add `verified_queries` for common questions the LLM gets wrong
-- Re-run auto-discovery if schema has changed
+### Widget not appearing
 
-**Stale schema after DB changes:**
-Re-run discovery: `POST /api/v1/projects/{id}/discovery/run`
+1. Check the script tag URL is correct and reachable
+2. Open browser DevTools > Console for errors
+3. Check the health endpoint: `curl http://your-server:3456/chatbot/api/health`
+
+### Widget shows "..." and never responds
+
+1. Check server logs for errors
+2. Test the API directly: `curl -N http://localhost:3456/chatbot/api/ask -H "Content-Type: application/json" -d '{"question":"hello"}'`
+3. If you see 429 errors, you've hit the rate limit (see above)
+4. If you see 401 errors, your secret token isn't matching
+
+### "EADDRINUSE: address already in use"
+
+Another process is using the port. Either kill it or use a different port:
+
+```bash
+# Find what's using port 3456
+lsof -ti:3456
+
+# Use a different port
+npx sql-chatbot-agent --port 4000
+```

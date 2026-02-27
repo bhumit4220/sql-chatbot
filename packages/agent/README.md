@@ -30,16 +30,20 @@ sql-chatbot-agent
 
 The chatbot will be running at `http://localhost:3456` with a chat widget ready to use.
 
-By default, it uses **OpenRouter** (free, no API key needed, no install). See [Providers](#providers) for other options.
+By default, it uses **OpenRouter** (free models, requires a free API key from [openrouter.ai/keys](https://openrouter.ai/keys)). See [Providers](#providers) for other options.
 
 ### One-liner with npx
 
 ```bash
-# Zero config -- uses OpenRouter free models (default)
-npx sql-chatbot-agent --db postgresql://localhost/mydb --code ./app
+# OpenRouter (free models -- get key at https://openrouter.ai/keys)
+npx sql-chatbot-agent --db postgresql://localhost/mydb --key sk-or-v1-xxx --code ./app
 
 # With Groq (cloud, faster)
 npx sql-chatbot-agent --db postgresql://localhost/mydb --provider groq --key gsk_xxx --code ./app
+
+# Or use environment variables
+export OPENROUTER_API_KEY=sk-or-v1-xxx
+npx sql-chatbot-agent --db postgresql://localhost/mydb --code ./app
 ```
 
 ## Configuration
@@ -92,6 +96,7 @@ Created by `sql-chatbot-agent init`:
 | `DATABASE_URL` | PostgreSQL connection URL |
 | `LLM_PROVIDER` | LLM provider: `ollama`, `groq`, or `openai` |
 | `LLM_API_KEY` | API key for the LLM provider |
+| `OPENROUTER_API_KEY` | OpenRouter API key (auto-detects provider) |
 | `LLM_MODEL` | Model name override |
 | `LLM_BASE_URL` | API base URL override |
 | `GROQ_API_KEY` | Groq API key (backward compat, same as `LLM_API_KEY`) |
@@ -112,7 +117,7 @@ sql-chatbot-agent works with any OpenAI-compatible LLM API. Four providers are p
 
 | Provider | Type | API Key | Default Model | Rate Limits |
 |----------|------|---------|---------------|-------------|
-| **OpenRouter** | Cloud | Not needed | `llama-3.3-70b-instruct:free` | 29+ free models, no signup |
+| **OpenRouter** | Cloud | Required ([openrouter.ai/keys](https://openrouter.ai/keys)) | `openrouter/free` | 50 req/day free, 1000/day with $10 credit |
 | **Groq** | Cloud | Required ([console.groq.com](https://console.groq.com)) | `llama-3.3-70b-versatile` | Free tier: 100K tokens/day |
 | **Ollama** | Local | Not needed | `llama3.1:8b` | None (runs on your machine) |
 | **OpenAI** | Cloud | Required ([platform.openai.com](https://platform.openai.com)) | `gpt-4o-mini` | Pay-per-use |
@@ -120,22 +125,25 @@ sql-chatbot-agent works with any OpenAI-compatible LLM API. Four providers are p
 ### Auto-detection
 
 If you don't specify `--provider`, the chatbot auto-detects:
-- **API key provided** → uses `groq`
-- **No API key** → uses `openrouter` (free, zero setup)
+- **`OPENROUTER_API_KEY` set** → uses `openrouter`
+- **Other API key provided** → uses `groq`
 
-### OpenRouter (Default -- Zero Setup)
+### OpenRouter (Default)
 
-OpenRouter provides free access to 29+ models with no API key and no signup required. This is the default when no API key is provided.
+OpenRouter provides free access to 29+ models. Get a free API key at [openrouter.ai/keys](https://openrouter.ai/keys).
 
 ```bash
-# Just works -- no API key, no install, nothing to configure
+# Set your key via env var or --key flag
+export OPENROUTER_API_KEY=sk-or-v1-xxx
 npx sql-chatbot-agent --db postgresql://localhost/mydb --code ./src
 ```
+
+**Rate limits:** 50 free model requests/day without credits. Add $10 credit (not consumed by free models) to unlock 1000/day. Resets daily at midnight UTC.
 
 To use a specific free model from [OpenRouter's free collection](https://openrouter.ai/collections/free-models):
 
 ```bash
-npx sql-chatbot-agent --db postgresql://localhost/mydb --model google/gemma-3-1b-it:free
+npx sql-chatbot-agent --db postgresql://localhost/mydb --key sk-or-v1-xxx --model google/gemma-3-1b-it:free
 ```
 
 ### Groq (Cloud, Free Tier)
@@ -353,7 +361,7 @@ The code indexer detects routes from:
 
 - Node.js >= 18
 - PostgreSQL database
-- An LLM provider: [Ollama](https://ollama.com) (local, free), [Groq](https://console.groq.com) (cloud, free tier), [OpenAI](https://platform.openai.com), or any OpenAI-compatible API
+- An LLM provider: [OpenRouter](https://openrouter.ai/keys) (free key), [Groq](https://console.groq.com) (cloud, free tier), [Ollama](https://ollama.com) (local, free), [OpenAI](https://platform.openai.com), or any OpenAI-compatible API
 
 ## License
 
