@@ -27,7 +27,7 @@ describe('formatSqlResult', () => {
   it('should handle NULL values', () => {
     const rows = [{ name: 'Alice', email: null }];
     const result = formatSqlResult(rows);
-    expect(result).toContain('Alice | NULL');
+    expect(result).toContain('Alice | N/A');
   });
 });
 
@@ -141,7 +141,7 @@ describe('buildAnswerMessages', () => {
     expect(userContent).not.toContain('Query Results:');
   });
 
-  const questionTypes: QuestionType[] = ['data', 'data_with_code', 'code', 'navigation', 'guidance', 'unsafe'];
+  const questionTypes: QuestionType[] = ['data', 'data_with_code', 'code', 'navigation', 'guidance', 'greeting', 'unsafe'];
 
   questionTypes.forEach((type) => {
     it(`should produce valid messages for "${type}" type`, () => {
@@ -185,6 +185,18 @@ describe('buildAnswerMessages', () => {
       expect(systemContent).not.toContain('login_type');
       expect(systemContent).not.toContain('service_type');
     });
+  });
+
+  it('should handle greeting type with appropriate system prompt', () => {
+    const messages = buildAnswerMessages({
+      ...baseInput,
+      question: 'Hello! What can you do?',
+      type: 'greeting',
+    });
+
+    const systemContent = messages[0].content as string;
+    expect(systemContent).toContain('greeting');
+    expect(systemContent).toContain('help');
   });
 
   it('should handle unsafe type with appropriate system prompt', () => {

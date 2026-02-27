@@ -45,6 +45,7 @@ describe('buildClassifyMessages', () => {
     expect(systemContent).toContain('"code"');
     expect(systemContent).toContain('"navigation"');
     expect(systemContent).toContain('"guidance"');
+    expect(systemContent).toContain('"greeting"');
     expect(systemContent).toContain('"unsafe"');
   });
 

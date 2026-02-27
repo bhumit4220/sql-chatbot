@@ -93,6 +93,10 @@ export class Orchestrator {
         yield* this.handleNavigationOrGuidance(input, history, classification.type);
         break;
 
+      case 'greeting':
+        yield* this.handleGreeting(input, history);
+        break;
+
       case 'unsafe':
         yield { type: 'token', content: "I can't help with that request." };
         break;
@@ -207,6 +211,21 @@ export class Orchestrator {
     }
   }
 
+  private async *handleGreeting(
+    input: AskInput,
+    history: ChatMessage[],
+  ): AsyncGenerator<SSEEvent> {
+    const answerMessages = buildAnswerMessages({
+      question: input.question,
+      type: 'greeting',
+      history,
+    });
+
+    for await (const chunk of streamLLM(answerMessages)) {
+      yield { type: 'token', content: chunk };
+    }
+  }
+
   private async *handleNavigationOrGuidance(
     input: AskInput,
     history: ChatMessage[],
@@ -235,7 +254,7 @@ export class Orchestrator {
     try {
       const parsed = JSON.parse(raw);
       const validTypes: QuestionType[] = [
-        'data', 'data_with_code', 'code', 'navigation', 'guidance', 'unsafe',
+        'data', 'data_with_code', 'code', 'navigation', 'guidance', 'greeting', 'unsafe',
       ];
       const type = validTypes.includes(parsed.type) ? parsed.type : 'data';
       return {

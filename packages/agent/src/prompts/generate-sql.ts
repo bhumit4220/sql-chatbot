@@ -22,6 +22,9 @@ RULES:
 8. Always qualify column names with table aliases when using JOINs to avoid ambiguity
 9. Return useful columns — don't SELECT * unless the user asks to "show everything"
 10. Order results meaningfully (most recent first for dates, highest first for counts, alphabetical for names)
+11. For "top N" or "most recent" queries, ALWAYS include relevant dates (created_at, updated_at, release_date) and key attributes (name, title, status, type) — give enough context for a meaningful answer
+12. NEVER return just IDs or a single column when additional context columns are available — the answer should be self-contained
+13. Use COALESCE for nullable date/number columns to provide fallback values where sensible
 
 Respond with JSON only: {"sql": "<the SQL query>", "explanation": "<brief explanation of what the query does>"}`;
 

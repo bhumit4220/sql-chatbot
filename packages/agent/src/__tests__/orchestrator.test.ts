@@ -275,6 +275,34 @@ describe('Orchestrator', () => {
     expect(fullText.toLowerCase()).toContain("can't help");
   });
 
+  // 5b. Greeting question: classifies → streams friendly response without SQL
+  it('5b. handles greeting question with LLM response', async () => {
+    mockClassification('greeting');
+    mockStream('Hi there! I can help you ', 'explore your data.');
+
+    const input: AskInput = { question: 'Hello! What can you do?' };
+    const events = await collectEvents(orchestrator.handleQuestion(input));
+
+    const types = events.map((e) => e.type);
+    expect(types).toContain('classifying');
+    expect(types).toContain('classified');
+    expect(types).toContain('token');
+    expect(types).toContain('done');
+
+    // Should NOT have SQL events
+    expect(types).not.toContain('sql');
+    expect(types).not.toContain('executing');
+
+    // Should have called streamLLM (unlike unsafe)
+    expect(mockStreamLLM).toHaveBeenCalled();
+
+    const classified = events.find((e) => e.type === 'classified');
+    expect(classified?.questionType).toBe('greeting');
+
+    const tokens = events.filter((e) => e.type === 'token').map((e) => e.content);
+    expect(tokens).toEqual(['Hi there! I can help you ', 'explore your data.']);
+  });
+
   // 6. Invalid SQL: classifies → generates SQL → validation fails → yields error
   it('6. handles invalid SQL validation', async () => {
     mockClassification('data');
