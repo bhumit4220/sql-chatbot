@@ -227,7 +227,7 @@ describe('runInit', () => {
 
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     expect(config.databaseUrl).toContain('postgresql://');
-    expect(config.provider).toBe('ollama');
+    expect(config.provider).toBe('openrouter');
     expect(config.llmApiKey).toBe('');
     expect(config.port).toBe(3456);
     // Should NOT have old groqApiKey field

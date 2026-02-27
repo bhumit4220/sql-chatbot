@@ -39,10 +39,18 @@ describe('resolveConfig', () => {
     ).toThrow('databaseUrl is required');
   });
 
-  it('should throw if no API key and non-ollama provider', () => {
+  it('should throw if no API key and provider requires one', () => {
     expect(() =>
       resolveConfig({ databaseUrl: 'postgres://localhost:5432/testdb', provider: 'groq' })
     ).toThrow('An LLM API key is required');
+  });
+
+  it('should not throw when no API key with openrouter (free)', () => {
+    const config = resolveConfig({
+      databaseUrl: 'postgres://localhost:5432/testdb',
+      provider: 'openrouter',
+    });
+    expect(config.llmApiKey).toBe('none');
   });
 
   it('should use groqApiKey as fallback for llmApiKey', () => {
@@ -173,15 +181,15 @@ describe('resolveConfig', () => {
       expect(config.llmModel).toBe(PROVIDER_PRESETS.groq.model);
     });
 
-    it('auto-detects ollama when no API key is provided', () => {
+    it('auto-detects openrouter when no API key is provided', () => {
       const config = resolveConfig({
         databaseUrl: 'postgres://localhost/testdb',
       });
 
-      expect(config.provider).toBe('ollama');
-      expect(config.llmApiKey).toBe('ollama');
-      expect(config.llmBaseUrl).toBe(PROVIDER_PRESETS.ollama.baseUrl);
-      expect(config.llmModel).toBe(PROVIDER_PRESETS.ollama.model);
+      expect(config.provider).toBe('openrouter');
+      expect(config.llmApiKey).toBe('none');
+      expect(config.llmBaseUrl).toBe(PROVIDER_PRESETS.openrouter.baseUrl);
+      expect(config.llmModel).toBe(PROVIDER_PRESETS.openrouter.model);
     });
 
     it('uses explicit provider preset for groq', () => {
@@ -203,9 +211,21 @@ describe('resolveConfig', () => {
       });
 
       expect(config.provider).toBe('ollama');
-      expect(config.llmApiKey).toBe('ollama');
+      expect(config.llmApiKey).toBe('none');
       expect(config.llmBaseUrl).toBe(PROVIDER_PRESETS.ollama.baseUrl);
       expect(config.llmModel).toBe(PROVIDER_PRESETS.ollama.model);
+    });
+
+    it('uses explicit provider preset for openrouter', () => {
+      const config = resolveConfig({
+        databaseUrl: 'postgres://localhost/testdb',
+        provider: 'openrouter',
+      });
+
+      expect(config.provider).toBe('openrouter');
+      expect(config.llmApiKey).toBe('none');
+      expect(config.llmBaseUrl).toBe(PROVIDER_PRESETS.openrouter.baseUrl);
+      expect(config.llmModel).toContain(':free');
     });
 
     it('uses explicit provider preset for openai', () => {

@@ -101,7 +101,7 @@ export function runInit(dir: string): void {
   } else {
     const template = {
       databaseUrl: 'postgresql://user:password@localhost:5432/your_database',
-      provider: 'ollama',
+      provider: 'openrouter',
       llmApiKey: '',
       codePaths: ['./src'],
       port: 3456,
@@ -154,11 +154,10 @@ function main(): void {
     process.exit(1);
   }
 
-  // API key is only required for non-ollama providers
-  // resolveConfig() handles auto-detection and ollama dummy key
-  if (!config.llmApiKey && config.provider !== 'ollama') {
-    // Check if provider will auto-detect to ollama (no key = ollama)
-    // If explicit provider set to something other than ollama, key is required
+  // API key is only required for non-ollama/non-openrouter providers
+  // resolveConfig() handles auto-detection and dummy keys
+  if (!config.llmApiKey && config.provider !== 'ollama' && config.provider !== 'openrouter') {
+    // If explicit provider set that needs a key, require it
     if (config.provider) {
       console.error('Error: API key is required for provider "' + config.provider + '".');
       console.error('Provide --key flag, set LLM_API_KEY env var, or add llmApiKey to chatbot.config.json');

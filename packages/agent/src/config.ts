@@ -1,9 +1,10 @@
-export type LLMProvider = 'groq' | 'ollama' | 'openai';
+export type LLMProvider = 'groq' | 'ollama' | 'openai' | 'openrouter';
 
 export const PROVIDER_PRESETS: Record<LLMProvider, { baseUrl: string; model: string }> = {
-  groq:   { baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
-  ollama: { baseUrl: 'http://localhost:11434/v1',       model: 'llama3.1:8b' },
-  openai: { baseUrl: 'https://api.openai.com/v1',      model: 'gpt-4o-mini' },
+  groq:       { baseUrl: 'https://api.groq.com/openai/v1',  model: 'llama-3.3-70b-versatile' },
+  ollama:     { baseUrl: 'http://localhost:11434/v1',        model: 'llama3.1:8b' },
+  openai:     { baseUrl: 'https://api.openai.com/v1',       model: 'gpt-4o-mini' },
+  openrouter: { baseUrl: 'https://openrouter.ai/api/v1',    model: 'meta-llama/llama-3.3-70b-instruct:free' },
 };
 
 export interface AgentConfig {
@@ -30,20 +31,20 @@ export function resolveConfig(
     process.env.LLM_API_KEY ||
     process.env.GROQ_API_KEY;
 
-  // Auto-detect provider: explicit > has key → groq, no key → ollama
+  // Auto-detect provider: explicit > has key → groq, no key → openrouter (free)
   const provider: LLMProvider =
     userConfig.provider ||
     (process.env.LLM_PROVIDER as LLMProvider | undefined) ||
-    (llmApiKey ? 'groq' : 'ollama');
+    (llmApiKey ? 'groq' : 'openrouter');
 
   const preset = PROVIDER_PRESETS[provider] || PROVIDER_PRESETS.groq;
 
-  // For ollama, use a dummy API key if none provided (OpenAI SDK requires one)
-  const resolvedApiKey = llmApiKey || (provider === 'ollama' ? 'ollama' : undefined);
+  // For ollama/openrouter, use a dummy API key if none provided (OpenAI SDK requires one)
+  const resolvedApiKey = llmApiKey || (provider === 'ollama' || provider === 'openrouter' ? 'none' : undefined);
 
   if (!resolvedApiKey) {
     throw new Error(
-      'An LLM API key is required. Provide llmApiKey, groqApiKey, or set LLM_API_KEY / GROQ_API_KEY environment variable. Or use provider: "ollama" for local models.'
+      'An LLM API key is required. Provide llmApiKey, groqApiKey, or set LLM_API_KEY / GROQ_API_KEY environment variable. Or use provider: "openrouter" for free models.'
     );
   }
 

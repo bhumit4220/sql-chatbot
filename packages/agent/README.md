@@ -30,15 +30,15 @@ sql-chatbot-agent
 
 The chatbot will be running at `http://localhost:3456` with a chat widget ready to use.
 
-By default, it uses **Ollama** (local, free, no API key needed). See [Providers](#providers) for other options.
+By default, it uses **OpenRouter** (free, no API key needed, no install). See [Providers](#providers) for other options.
 
 ### One-liner with npx
 
 ```bash
-# With Ollama (default -- no API key needed)
+# Zero config -- uses OpenRouter free models (default)
 npx sql-chatbot-agent --db postgresql://localhost/mydb --code ./app
 
-# With Groq (cloud)
+# With Groq (cloud, faster)
 npx sql-chatbot-agent --db postgresql://localhost/mydb --provider groq --key gsk_xxx --code ./app
 ```
 
@@ -51,7 +51,7 @@ Created by `sql-chatbot-agent init`:
 ```json
 {
   "databaseUrl": "postgresql://user:password@localhost:5432/your_database",
-  "provider": "ollama",
+  "provider": "openrouter",
   "llmApiKey": "",
   "codePaths": ["./src"],
   "port": 3456,
@@ -62,8 +62,8 @@ Created by `sql-chatbot-agent init`:
 | Field | Type | Description |
 |-------|------|-------------|
 | `databaseUrl` | string | PostgreSQL connection URL (required) |
-| `provider` | string | LLM provider: `ollama`, `groq`, or `openai` (default: auto-detect) |
-| `llmApiKey` | string | API key for the LLM provider (not needed for Ollama) |
+| `provider` | string | LLM provider: `openrouter`, `groq`, `ollama`, or `openai` (default: auto-detect) |
+| `llmApiKey` | string | API key for the LLM provider (not needed for OpenRouter or Ollama) |
 | `llmModel` | string | Model name override (default: provider-specific) |
 | `llmBaseUrl` | string | API base URL override (default: provider-specific) |
 | `codePaths` | string[] | Directories to index for code questions (default: `["./src"]`) |
@@ -108,47 +108,51 @@ Configuration is resolved in this order (highest priority first):
 
 ## Providers
 
-sql-chatbot-agent works with any OpenAI-compatible LLM API. Three providers are preconfigured:
+sql-chatbot-agent works with any OpenAI-compatible LLM API. Four providers are preconfigured:
 
 | Provider | Type | API Key | Default Model | Rate Limits |
 |----------|------|---------|---------------|-------------|
-| **Ollama** | Local | Not needed | `llama3.1:8b` | None (runs on your machine) |
+| **OpenRouter** | Cloud | Not needed | `llama-3.3-70b-instruct:free` | 29+ free models, no signup |
 | **Groq** | Cloud | Required ([console.groq.com](https://console.groq.com)) | `llama-3.3-70b-versatile` | Free tier: 100K tokens/day |
+| **Ollama** | Local | Not needed | `llama3.1:8b` | None (runs on your machine) |
 | **OpenAI** | Cloud | Required ([platform.openai.com](https://platform.openai.com)) | `gpt-4o-mini` | Pay-per-use |
 
 ### Auto-detection
 
 If you don't specify `--provider`, the chatbot auto-detects:
 - **API key provided** → uses `groq`
-- **No API key** → uses `ollama`
+- **No API key** → uses `openrouter` (free, zero setup)
 
-### Ollama (Recommended for Development)
+### OpenRouter (Default -- Zero Setup)
 
-Ollama runs LLMs locally with no API key, no rate limits, and no cost.
+OpenRouter provides free access to 29+ models with no API key and no signup required. This is the default when no API key is provided.
 
 ```bash
-# 1. Install Ollama (https://ollama.com)
-# 2. Pull a model
-ollama pull llama3.1:8b
-
-# 3. Start Ollama (runs in background)
-ollama serve
-
-# 4. Run the chatbot -- no --key needed
+# Just works -- no API key, no install, nothing to configure
 npx sql-chatbot-agent --db postgresql://localhost/mydb --code ./src
 ```
 
-To use a different model:
+To use a specific free model from [OpenRouter's free collection](https://openrouter.ai/collections/free-models):
 
 ```bash
-ollama pull mistral:7b
-npx sql-chatbot-agent --db postgresql://localhost/mydb --model mistral:7b
+npx sql-chatbot-agent --db postgresql://localhost/mydb --model google/gemma-3-1b-it:free
 ```
 
 ### Groq (Cloud, Free Tier)
 
+Faster than OpenRouter but requires a free API key.
+
 ```bash
 npx sql-chatbot-agent --db postgresql://localhost/mydb --provider groq --key gsk_xxx
+```
+
+### Ollama (Local, Offline)
+
+For fully offline use. Requires [installing Ollama](https://ollama.com) and pulling a model.
+
+```bash
+ollama pull llama3.1:8b && ollama serve
+npx sql-chatbot-agent --db postgresql://localhost/mydb --provider ollama
 ```
 
 ### OpenAI
@@ -231,8 +235,8 @@ const app = express();
 
 app.use('/chatbot', sqlChatbot({
   databaseUrl: process.env.DATABASE_URL,
-  provider: 'ollama',           // or 'groq', 'openai'
-  llmApiKey: process.env.LLM_API_KEY,  // not needed for ollama
+  provider: 'openrouter',        // or 'groq', 'ollama', 'openai'
+  llmApiKey: process.env.LLM_API_KEY,  // not needed for openrouter/ollama
   codePaths: ['./src'],
   secret: process.env.CHATBOT_SECRET,
 }));
