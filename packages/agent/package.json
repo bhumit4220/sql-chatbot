@@ -1,15 +1,27 @@
 {
   "name": "sql-chatbot-agent",
   "version": "1.0.0",
-  "description": "AI chatbot middleware for Express apps with PostgreSQL — auto-discovers schema, indexes code, executes SQL, streams answers via chat widget",
+  "description": "AI chatbot for any PostgreSQL app — auto-discovers schema, indexes code, executes SQL, streams answers via chat widget. Run with npx or use as Express middleware.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "sql-chatbot-agent": "dist/cli.js"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/bhumit4220/sql-chatbot.git"
   },
-  "keywords": ["chatbot", "sql", "postgresql", "express", "middleware", "ai", "llm", "groq"],
+  "keywords": [
+    "chatbot",
+    "sql",
+    "postgresql",
+    "express",
+    "middleware",
+    "ai",
+    "llm",
+    "groq"
+  ],
   "files": [
     "dist",
     "widget"
@@ -24,11 +36,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "cors": "^2.8.6",
     "express": "^4.0.0",
     "openai": "^4.0.0",
     "pg": "^8.0.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "@types/express": "^4.0.0",
     "@types/node": "^20.0.0",
     "@types/pg": "^8.0.0",
