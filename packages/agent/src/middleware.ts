@@ -1,14 +1,11 @@
 import express from 'express';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { resolveConfig } from './config.js';
 import { initLLM } from './llm/client.js';
 import { SchemaService } from './services/schema.js';
 import { CodeIndexer } from './services/code-indexer.js';
 import { Orchestrator } from './services/orchestrator.js';
 import type { AgentConfig } from './config.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export function sqlChatbot(
   userConfig: Partial<AgentConfig> & { databaseUrl: string; groqApiKey?: string },
@@ -71,7 +68,7 @@ export function sqlChatbot(
       await ensureInit();
 
       const { question, pageContext, history } = req.body;
-      if (!question || typeof question !== 'string') {
+      if (typeof question !== 'string' || !question.trim()) {
         res.status(400).json({ error: 'question is required' });
         return;
       }
@@ -100,6 +97,7 @@ export function sqlChatbot(
   // Refresh endpoint
   router.post('/api/refresh', async (_req, res) => {
     try {
+      await ensureInit();
       await schemaService.discover(config.databaseUrl);
       await codeIndexer.index(config.codePaths);
       res.json({ status: 'refreshed' });

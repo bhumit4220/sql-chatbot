@@ -190,6 +190,17 @@ describe('sqlChatbot middleware', () => {
       expect(res.body).toEqual({ error: 'question is required' });
     });
 
+    it('returns 400 when question is only whitespace', async () => {
+      const app = createApp();
+
+      const res = await request(app)
+        .post('/chatbot/api/ask')
+        .send({ question: '   ' });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({ error: 'question is required' });
+    });
+
     it('sets SSE headers and streams events from orchestrator', async () => {
       mockHandleQuestion.mockReturnValue(
         asyncEvents([
@@ -291,22 +302,20 @@ describe('sqlChatbot middleware', () => {
     it('re-discovers schema and re-indexes code', async () => {
       const app = createApp();
 
-      // First trigger init
-      await request(app).get('/chatbot/api/health');
-      vi.clearAllMocks();
-
       const res = await request(app).post('/chatbot/api/refresh');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ status: 'refreshed' });
-      expect(mockDiscover).toHaveBeenCalledWith('postgres://localhost/test');
-      expect(mockIndex).toHaveBeenCalledWith(['./src']);
+      // ensureInit triggers discover+index, then refresh calls them again
+      expect(mockDiscover).toHaveBeenCalledTimes(2);
+      expect(mockIndex).toHaveBeenCalledTimes(2);
+      expect(mockInitLLM).toHaveBeenCalledTimes(1);
     });
 
     it('returns 500 on refresh failure', async () => {
       const app = createApp();
 
-      // First trigger init
+      // First trigger init via another endpoint so init succeeds
       await request(app).get('/chatbot/api/health');
       mockDiscover.mockRejectedValueOnce(new Error('Refresh failed'));
 

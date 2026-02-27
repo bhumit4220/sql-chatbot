@@ -13,6 +13,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "build:widget": "cd widget-src && npx vite build",
     "test": "vitest run",
     "test:watch": "vitest"
   },
