@@ -4,68 +4,57 @@ Copy everything below the line and paste it as your first message in a new sessi
 
 ---
 
-Read docs/plans/2026-02-27-v1-release-design.md for the full V1 design and implementation plan.
+Read the memory file for full context on what's been done. Here's where we left off:
 
-**What this project is:**
-This is a GENERIC, REUSABLE AI chatbot product — NOT app-specific. The chatbot works with ANY web app that has a PostgreSQL database. Everything is auto-discovered (schema, code, routes) — NEVER hardcode app-specific things.
+**Branch:** v1-development (pushed to origin)
+**npm:** Published as `sql-chatbot-agent@1.0.0` — https://www.npmjs.com/package/sql-chatbot-agent
+**GitHub:** https://github.com/bhumit4220/sql-chatbot
 
-**What we're building on this branch:**
-An npm package (`@sql-chatbot/agent`) — Express middleware that customers install in their JS app. It:
-- Discovers their PostgreSQL schema at boot
-- Indexes their code (frontend + backend, multiple `codePaths`)
-- Detects routes from code (React Router, Next.js file routing, Express routes, Rails routes.rb)
-- Executes SQL queries (read-only, validated)
-- Streams answers via an embedded chat widget (Shadow DOM, IIFE bundle)
-- Uses Groq free tier as LLM (llama-3.3-70b-versatile, 14,400 req/day free, OpenAI-compatible API)
+## Status: V1 COMPLETE — All 6 Phases Done
 
-**Current branch:** v1-development (created from master)
-**GitHub:** https://github.com/bhumit4220/sql-chatbot, account: bhumit4220
+All 6 phases implemented, reviewed, tested, committed, pushed, and published to npm. 147 tests passing across 10 test files.
 
-**What exists already (from V3, on v3-development branch — to copy/adapt):**
-- LLM client: `packages/cloud/src/llm/openai.ts` — OpenAI SDK wrapper with `callOpenAI()` and `streamOpenAI()`
-- Prompts: `packages/cloud/src/prompts/classify.ts`, `generate-sql.ts`, `answer.ts` — battle-tested prompts for all 5 question types
-- Widget: `widget/` — React IIFE bundle with Shadow DOM, extracts page navigation links, streams SSE responses
-- Tests: `packages/cloud/src/__tests__/` — unit tests for prompts + integration test for server
-
-**What needs to be built (6 phases in the plan):**
-1. **Phase 1:** Project scaffold + LLM client (adapt V3's to point at Groq) + copy prompts
-2. **Phase 2:** Schema discovery — PostgreSQL introspection via `information_schema` + `pg_constraint`
-3. **Phase 3:** Code indexer + route detection — scan files, detect React Router/Next.js/Express/Rails routes, keyword search
-4. **Phase 4:** SQL executor — validate (block dangerous SQL) + execute in READ ONLY transaction
-5. **Phase 5:** Ask orchestrator — classify → route to data/code/navigation/unsafe → stream answer
-6. **Phase 6:** Express middleware wrapper + widget adaptation (V3 widget calls 3 endpoints, V1 calls 1: `/api/ask`) + E2E test
-
-**Key architecture decisions:**
-- Agent is Express middleware (not standalone server) — deploys WITH the customer's app, always has code + DB access
-- `codePaths` accepts multiple directories — scans frontend + backend codebases together
-- Navigation comes from TWO sources: widget scrapes current page DOM + code indexer detects all routes at boot
-- LLM is provider-agnostic: defaults to Groq free tier, switchable via `LLM_BASE_URL` env var
-- No RAG/pgvector — simple keyword search for code, PostgreSQL introspection for schema
-- No auth — single-tenant middleware, host app handles auth
-- PostgreSQL only for V1
-
-**File structure being created:**
+**Latest git log on v1-development:**
 ```
-packages/agent/
-├── package.json
-├── tsconfig.json
-├── src/
-│   ├── index.ts              # Public API: exports sqlChatbot()
-│   ├── middleware.ts          # Express middleware factory
-│   ├── config.ts             # Config validation
-│   ├── llm/client.ts         # LLM client (OpenAI SDK → Groq)
-│   ├── prompts/              # classify.ts, generate-sql.ts, answer.ts
-│   ├── services/
-│   │   ├── schema.ts         # Schema discovery
-│   │   ├── code-indexer.ts   # Code scanner + route detection
-│   │   ├── sql-executor.ts   # SQL validation + execution
-│   │   └── orchestrator.ts   # Ask pipeline
-│   └── __tests__/
-└── widget/widget.js           # Pre-built IIFE bundle
+c271541 feat: publish sql-chatbot-agent v1.0.0 to npm with README
+c2314a3 fix: add express.json() to middleware and fix Dirent type error
+203ad18 feat: V1 chat widget adapted from V3 with Vite IIFE build
+db58778 fix: address Phase 6 middleware code review findings
+7633f33 feat: Express middleware router and public API (Phase 6 - Task 1)
+26022ae fix: address Phase 5 code review findings
+0ce2b0b feat: ask orchestrator with classify-route-answer pipeline
+8e41703 fix: address Phase 4 code review findings
+f53152e feat: SQL executor with validation and read-only enforcement
+f21d6dd fix: address Phase 3 code review findings
+d1fe26a feat: code indexer with route detection and keyword search
+80517b6 fix: address Phase 2 code review findings
+1aefd98 feat: schema discovery via PostgreSQL introspection
+ea1b6d8 fix: address Phase 1 code review findings
+d774314 feat: scaffold agent package with LLM client and prompts
 ```
 
-**Task:** Execute the V1 implementation plan phase by phase. Use the superpowers:subagent-driven-development skill. Start from Phase 1 (or wherever we left off — check git log for progress). Follow TDD: write failing tests first, then implement, then commit.
+## E2E Testing Done
+- Tested with Playwright MCP against 2BNCHILL project (real PostgreSQL DB with 63 tables, real Groq LLM)
+- Widget loads, Shadow DOM works, chat panel opens, SSE streaming works end-to-end
+- Found and fixed bug: middleware was missing `express.json()` body parser
 
-**Also read these for context:**
-- docs/plans/2026-02-26-llm-provider-architecture-design.md — LLM provider research and architecture
-- docs/research/2026-02-27-llm-provider-research.md — model benchmarks and Groq recommendation
+## What Still Needs To Be Done
+1. **Root-level README.md** — README exists at `packages/agent/README.md` but NOT at repo root. The GitHub landing page needs one too.
+2. **LLM answer quality** — Follow-up questions and complex queries give weak answers. Prompts in `packages/agent/src/prompts/` may need tuning.
+3. **Merge to master** — v1-development is complete but not merged to master yet.
+4. **Clean up sensitive data** — Groq API key and npm tokens were used during testing, should be rotated.
+
+## How Integration Works (for reference)
+```js
+// 1. npm install sql-chatbot-agent
+// 2. Add to Express app:
+const { sqlChatbot } = require('sql-chatbot-agent');
+app.use('/chatbot', sqlChatbot({
+  databaseUrl: process.env.DATABASE_URL,
+  groqApiKey: process.env.GROQ_API_KEY,
+  codePaths: ['./src'],
+}));
+// 3. Add to HTML: <script src="/chatbot/widget.js"></script>
+```
+
+Start by asking me what I want to work on next.
