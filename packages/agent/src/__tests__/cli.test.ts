@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCliArgs, loadConfigFile, mergeConfig } from '../cli.js';
+import { parseCliArgs, loadConfigFile, mergeConfig, runInit } from '../cli.js';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -109,5 +109,55 @@ describe('mergeConfig', () => {
   it('uses default codePaths ["./src"] when nothing specified', () => {
     const result = mergeConfig({}, {}, {});
     expect(result.codePaths).toEqual(['./src']);
+  });
+});
+
+describe('runInit', () => {
+  it('creates chatbot.config.json with template values', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'init-test-'));
+    runInit(tmpDir);
+
+    const configPath = path.join(tmpDir, 'chatbot.config.json');
+    expect(fs.existsSync(configPath)).toBe(true);
+
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    expect(config.databaseUrl).toContain('postgresql://');
+    expect(config.groqApiKey).toBe('your-groq-api-key');
+    expect(config.port).toBe(3456);
+
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('does not overwrite existing chatbot.config.json', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'init-test-'));
+    const configPath = path.join(tmpDir, 'chatbot.config.json');
+    fs.writeFileSync(configPath, '{"custom": true}');
+
+    runInit(tmpDir);
+
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    expect(config.custom).toBe(true);
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('appends to existing .gitignore', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'init-test-'));
+    fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'node_modules\n');
+
+    runInit(tmpDir);
+
+    const gitignore = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8');
+    expect(gitignore).toContain('node_modules');
+    expect(gitignore).toContain('chatbot.config.json');
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
+  it('creates .gitignore if it does not exist', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'init-test-'));
+    runInit(tmpDir);
+
+    const gitignore = fs.readFileSync(path.join(tmpDir, '.gitignore'), 'utf-8');
+    expect(gitignore).toContain('chatbot.config.json');
+    fs.rmSync(tmpDir, { recursive: true });
   });
 });
