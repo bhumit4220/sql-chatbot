@@ -30,7 +30,12 @@ function mapType(pgType: string): string {
 
 function isSensitive(columnName: string): boolean {
   const lower = columnName.toLowerCase();
-  return SENSITIVE_PATTERNS.some((pattern) => lower.includes(pattern));
+  return SENSITIVE_PATTERNS.some((pattern) => {
+    // Word-boundary matching: pattern must appear as a whole word segment
+    // This avoids false positives like "pinned_at" matching "pin"
+    const regex = new RegExp('(^|_)' + pattern + '($|_)');
+    return regex.test(lower);
+  });
 }
 
 interface ColumnInfo {
@@ -73,6 +78,7 @@ export class SchemaService {
            FROM information_schema.table_constraints tc
            JOIN information_schema.key_column_usage kcu
              ON tc.constraint_name = kcu.constraint_name
+             AND tc.constraint_schema = kcu.constraint_schema
            WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = 'public'`
         ),
         pool.query(
@@ -84,8 +90,10 @@ export class SchemaService {
            FROM information_schema.table_constraints tc
            JOIN information_schema.key_column_usage kcu
              ON tc.constraint_name = kcu.constraint_name
+             AND tc.constraint_schema = kcu.constraint_schema
            JOIN information_schema.constraint_column_usage ccu
              ON tc.constraint_name = ccu.constraint_name
+             AND tc.constraint_schema = ccu.constraint_schema
            WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'`
         ),
       ]);

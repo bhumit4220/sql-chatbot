@@ -92,6 +92,14 @@ describe('SchemaService', () => {
     expect(summary).toContain('title VARCHAR');
     expect(summary).toContain('total DECIMAL');
     expect(summary).toContain('created_at TIMESTAMP');
+    expect(mockEnd).toHaveBeenCalledOnce();
+  });
+
+  it('calls pool.end() even when a query throws', async () => {
+    mockQuery.mockRejectedValue(new Error('connection refused'));
+
+    await expect(service.discover('postgres://localhost:5432/testdb')).rejects.toThrow('connection refused');
+    expect(mockEnd).toHaveBeenCalledOnce();
   });
 
   it('marks primary keys with PK', async () => {
@@ -223,6 +231,31 @@ describe('SchemaService', () => {
 
     expect(service.tableCount()).toBe(3);
     expect(service.getSummary()).toContain('TABLE invoices (');
+  });
+
+  it('does not filter columns with sensitive substrings that are not word boundaries', async () => {
+    setupMockQuery({
+      tables: { rows: [{ table_name: 'items' }] },
+      columns: {
+        rows: [
+          { table_name: 'items', column_name: 'id', data_type: 'integer', is_nullable: 'NO', column_default: null },
+          { table_name: 'items', column_name: 'pinned_at', data_type: 'timestamp without time zone', is_nullable: 'YES', column_default: null },
+          { table_name: 'items', column_name: 'spinning', data_type: 'boolean', is_nullable: 'YES', column_default: null },
+          { table_name: 'items', column_name: 'hashtag', data_type: 'character varying', is_nullable: 'YES', column_default: null },
+          { table_name: 'items', column_name: 'saltwater', data_type: 'boolean', is_nullable: 'YES', column_default: null },
+        ],
+      },
+      primaryKeys: { rows: [{ table_name: 'items', column_name: 'id' }] },
+      foreignKeys: { rows: [] },
+    });
+
+    await service.discover('postgres://localhost:5432/testdb');
+
+    const summary = service.getSummary();
+    expect(summary).toContain('pinned_at TIMESTAMP');
+    expect(summary).toContain('spinning BOOL');
+    expect(summary).toContain('hashtag VARCHAR');
+    expect(summary).toContain('saltwater BOOL');
   });
 
   it('maps PostgreSQL data types to readable names', async () => {
