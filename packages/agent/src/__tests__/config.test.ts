@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { resolveConfig } from '../config.js';
+import { resolveConfig, PROVIDER_PRESETS } from '../config.js';
 
 describe('resolveConfig', () => {
   const originalEnv = process.env;
@@ -10,6 +10,7 @@ describe('resolveConfig', () => {
     delete process.env.GROQ_API_KEY;
     delete process.env.LLM_BASE_URL;
     delete process.env.LLM_MODEL;
+    delete process.env.LLM_PROVIDER;
   });
 
   afterEach(() => {
@@ -22,12 +23,13 @@ describe('resolveConfig', () => {
       llmApiKey: 'test-key',
     });
 
-    expect(config).toEqual({
+    expect(config).toMatchObject({
       databaseUrl: 'postgres://localhost:5432/testdb',
       codePaths: ['./src'],
       llmBaseUrl: 'https://api.groq.com/openai/v1',
       llmApiKey: 'test-key',
       llmModel: 'llama-3.3-70b-versatile',
+      provider: 'groq',
     });
   });
 
@@ -37,9 +39,9 @@ describe('resolveConfig', () => {
     ).toThrow('databaseUrl is required');
   });
 
-  it('should throw if no API key is provided', () => {
+  it('should throw if no API key and non-ollama provider', () => {
     expect(() =>
-      resolveConfig({ databaseUrl: 'postgres://localhost:5432/testdb' })
+      resolveConfig({ databaseUrl: 'postgres://localhost:5432/testdb', provider: 'groq' })
     ).toThrow('An LLM API key is required');
   });
 
@@ -155,5 +157,124 @@ describe('resolveConfig', () => {
     });
 
     expect(config.llmModel).toBe('gpt-4o-mini');
+  });
+
+  // --- Provider preset tests ---
+
+  describe('provider presets', () => {
+    it('auto-detects groq when API key is provided', () => {
+      const config = resolveConfig({
+        databaseUrl: 'postgres://localhost/testdb',
+        llmApiKey: 'my-key',
+      });
+
+      expect(config.provider).toBe('groq');
+      expect(config.llmBaseUrl).toBe(PROVIDER_PRESETS.groq.baseUrl);
+      expect(config.llmModel).toBe(PROVIDER_PRESETS.groq.model);
+    });
+
+    it('auto-detects ollama when no API key is provided', () => {
+      const config = resolveConfig({
+        databaseUrl: 'postgres://localhost/testdb',
+      });
+
+      expect(config.provider).toBe('ollama');
+      expect(config.llmApiKey).toBe('ollama');
+      expect(config.llmBaseUrl).toBe(PROVIDER_PRESETS.ollama.baseUrl);
+      expect(config.llmModel).toBe(PROVIDER_PRESETS.ollama.model);
+    });
+
+    it('uses explicit provider preset for groq', () => {
+      const config = resolveConfig({
+        databaseUrl: 'postgres://localhost/testdb',
+        provider: 'groq',
+        llmApiKey: 'my-key',
+      });
+
+      expect(config.provider).toBe('groq');
+      expect(config.llmBaseUrl).toBe(PROVIDER_PRESETS.groq.baseUrl);
+      expect(config.llmModel).toBe(PROVIDER_PRESETS.groq.model);
+    });
+
+    it('uses explicit provider preset for ollama', () => {
+      const config = resolveConfig({
+        databaseUrl: 'postgres://localhost/testdb',
+        provider: 'ollama',
+      });
+
+      expect(config.provider).toBe('ollama');
+      expect(config.llmApiKey).toBe('ollama');
+      expect(config.llmBaseUrl).toBe(PROVIDER_PRESETS.ollama.baseUrl);
+      expect(config.llmModel).toBe(PROVIDER_PRESETS.ollama.model);
+    });
+
+    it('uses explicit provider preset for openai', () => {
+      const config = resolveConfig({
+        databaseUrl: 'postgres://localhost/testdb',
+        provider: 'openai',
+        llmApiKey: 'sk-xxx',
+      });
+
+      expect(config.provider).toBe('openai');
+      expect(config.llmBaseUrl).toBe(PROVIDER_PRESETS.openai.baseUrl);
+      expect(config.llmModel).toBe(PROVIDER_PRESETS.openai.model);
+    });
+
+    it('explicit llmBaseUrl overrides provider preset', () => {
+      const config = resolveConfig({
+        databaseUrl: 'postgres://localhost/testdb',
+        provider: 'ollama',
+        llmBaseUrl: 'http://remote-server:11434/v1',
+      });
+
+      expect(config.llmBaseUrl).toBe('http://remote-server:11434/v1');
+    });
+
+    it('explicit llmModel overrides provider preset', () => {
+      const config = resolveConfig({
+        databaseUrl: 'postgres://localhost/testdb',
+        provider: 'ollama',
+        llmModel: 'mistral:7b',
+      });
+
+      expect(config.llmModel).toBe('mistral:7b');
+    });
+
+    it('LLM_PROVIDER env var sets provider', () => {
+      process.env.LLM_PROVIDER = 'openai';
+
+      const config = resolveConfig({
+        databaseUrl: 'postgres://localhost/testdb',
+        llmApiKey: 'sk-xxx',
+      });
+
+      expect(config.provider).toBe('openai');
+      expect(config.llmBaseUrl).toBe(PROVIDER_PRESETS.openai.baseUrl);
+    });
+
+    it('explicit provider overrides LLM_PROVIDER env var', () => {
+      process.env.LLM_PROVIDER = 'openai';
+
+      const config = resolveConfig({
+        databaseUrl: 'postgres://localhost/testdb',
+        provider: 'groq',
+        llmApiKey: 'my-key',
+      });
+
+      expect(config.provider).toBe('groq');
+    });
+
+    it('ollama provider with groqApiKey still works (backward compat)', () => {
+      const config = resolveConfig({
+        databaseUrl: 'postgres://localhost/testdb',
+        provider: 'ollama',
+        groqApiKey: 'old-key',
+      });
+
+      // groqApiKey is resolved as llmApiKey, provider is still ollama
+      expect(config.llmApiKey).toBe('old-key');
+      expect(config.provider).toBe('ollama');
+      expect(config.llmBaseUrl).toBe(PROVIDER_PRESETS.ollama.baseUrl);
+    });
   });
 });

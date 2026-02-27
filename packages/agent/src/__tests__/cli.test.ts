@@ -35,6 +35,21 @@ describe('parseCliArgs', () => {
     expect(result.secret).toBe('my-token');
   });
 
+  it('parses --provider flag', () => {
+    const result = parseCliArgs(['--provider', 'ollama']);
+    expect(result.provider).toBe('ollama');
+  });
+
+  it('parses --model flag', () => {
+    const result = parseCliArgs(['--model', 'mistral:7b']);
+    expect(result.model).toBe('mistral:7b');
+  });
+
+  it('parses --base-url flag', () => {
+    const result = parseCliArgs(['--base-url', 'http://localhost:11434/v1']);
+    expect(result['base-url']).toBe('http://localhost:11434/v1');
+  });
+
   it('detects init subcommand', () => {
     const result = parseCliArgs(['init']);
     expect(result.subcommand).toBe('init');
@@ -44,7 +59,29 @@ describe('parseCliArgs', () => {
     const result = parseCliArgs([]);
     expect(result.db).toBeUndefined();
     expect(result.key).toBeUndefined();
+    expect(result.provider).toBeUndefined();
     expect(result.subcommand).toBeUndefined();
+  });
+
+  it('parses all flags together', () => {
+    const result = parseCliArgs([
+      '--db', 'postgresql://localhost/test',
+      '--provider', 'groq',
+      '--key', 'gsk_xxx',
+      '--model', 'llama-3.3-70b-versatile',
+      '--base-url', 'https://api.groq.com/openai/v1',
+      '--code', './src',
+      '-p', '4000',
+      '--secret', 'my-secret',
+    ]);
+    expect(result.db).toBe('postgresql://localhost/test');
+    expect(result.provider).toBe('groq');
+    expect(result.key).toBe('gsk_xxx');
+    expect(result.model).toBe('llama-3.3-70b-versatile');
+    expect(result['base-url']).toBe('https://api.groq.com/openai/v1');
+    expect(result.code).toBe('./src');
+    expect(result.port).toBe('4000');
+    expect(result.secret).toBe('my-secret');
   });
 });
 
@@ -70,6 +107,22 @@ describe('loadConfigFile', () => {
     fs.rmSync(tmpDir, { recursive: true });
   });
 
+  it('loads new-style config with provider field', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-test-'));
+    const configPath = path.join(tmpDir, 'chatbot.config.json');
+    fs.writeFileSync(configPath, JSON.stringify({
+      databaseUrl: 'postgresql://localhost/mydb',
+      provider: 'ollama',
+      llmApiKey: '',
+      codePaths: ['./src'],
+      port: 3456,
+    }));
+    const config = loadConfigFile(tmpDir);
+    expect(config.provider).toBe('ollama');
+    expect(config.llmApiKey).toBe('');
+    fs.rmSync(tmpDir, { recursive: true });
+  });
+
   it('returns empty object when no config file exists', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-test-'));
     const config = loadConfigFile(tmpDir);
@@ -86,7 +139,7 @@ describe('mergeConfig', () => {
       { db: 'cli-db' },
     );
     expect(result.databaseUrl).toBe('cli-db');
-    expect(result.groqApiKey).toBe('env-key');
+    expect(result.llmApiKey).toBe('env-key');
     expect(result.port).toBe(4000);
   });
 
@@ -97,7 +150,7 @@ describe('mergeConfig', () => {
       {},
     );
     expect(result.databaseUrl).toBe('file-db');
-    expect(result.groqApiKey).toBe('file-key');
+    expect(result.llmApiKey).toBe('file-key');
     expect(result.port).toBe(3000);
   });
 
@@ -110,10 +163,62 @@ describe('mergeConfig', () => {
     const result = mergeConfig({}, {}, {});
     expect(result.codePaths).toEqual(['./src']);
   });
+
+  it('--provider flag sets provider', () => {
+    const result = mergeConfig({}, {}, { provider: 'ollama' });
+    expect(result.provider).toBe('ollama');
+  });
+
+  it('--model flag sets llmModel', () => {
+    const result = mergeConfig({}, {}, { model: 'mistral:7b' });
+    expect(result.llmModel).toBe('mistral:7b');
+  });
+
+  it('--base-url flag sets llmBaseUrl', () => {
+    const result = mergeConfig({}, {}, { 'base-url': 'http://localhost:11434/v1' });
+    expect(result.llmBaseUrl).toBe('http://localhost:11434/v1');
+  });
+
+  it('LLM_PROVIDER env var sets provider', () => {
+    const result = mergeConfig({}, { LLM_PROVIDER: 'openai' }, {});
+    expect(result.provider).toBe('openai');
+  });
+
+  it('file config provider is used as fallback', () => {
+    const result = mergeConfig({ provider: 'ollama' }, {}, {});
+    expect(result.provider).toBe('ollama');
+  });
+
+  it('CLI --key flag overrides env and file for llmApiKey', () => {
+    const result = mergeConfig(
+      { llmApiKey: 'file-key' },
+      { LLM_API_KEY: 'env-key' },
+      { key: 'cli-key' },
+    );
+    expect(result.llmApiKey).toBe('cli-key');
+  });
+
+  it('new-style llmApiKey in file config works', () => {
+    const result = mergeConfig(
+      { llmApiKey: 'new-style-key' },
+      {},
+      {},
+    );
+    expect(result.llmApiKey).toBe('new-style-key');
+  });
+
+  it('groqApiKey in file config still works (backward compat)', () => {
+    const result = mergeConfig(
+      { groqApiKey: 'old-style-key' },
+      {},
+      {},
+    );
+    expect(result.llmApiKey).toBe('old-style-key');
+  });
 });
 
 describe('runInit', () => {
-  it('creates chatbot.config.json with template values', () => {
+  it('creates chatbot.config.json with new-style template', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'init-test-'));
     runInit(tmpDir);
 
@@ -122,8 +227,11 @@ describe('runInit', () => {
 
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
     expect(config.databaseUrl).toContain('postgresql://');
-    expect(config.groqApiKey).toBe('your-groq-api-key');
+    expect(config.provider).toBe('ollama');
+    expect(config.llmApiKey).toBe('');
     expect(config.port).toBe(3456);
+    // Should NOT have old groqApiKey field
+    expect(config.groqApiKey).toBeUndefined();
 
     fs.rmSync(tmpDir, { recursive: true });
   });

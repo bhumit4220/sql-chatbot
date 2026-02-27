@@ -22,7 +22,7 @@ sql-chatbot-agent init
 
 This creates a `chatbot.config.json` in the current directory and adds it to `.gitignore`.
 
-Edit the file with your database URL and Groq API key, then start the chatbot:
+Edit the file with your database URL, then start the chatbot:
 
 ```bash
 sql-chatbot-agent
@@ -30,12 +30,16 @@ sql-chatbot-agent
 
 The chatbot will be running at `http://localhost:3456` with a chat widget ready to use.
 
+By default, it uses **Ollama** (local, free, no API key needed). See [Providers](#providers) for other options.
+
 ### One-liner with npx
 
-Skip installation entirely:
-
 ```bash
-npx sql-chatbot-agent --db postgresql://localhost/mydb --key gsk_xxx --code ./app
+# With Ollama (default -- no API key needed)
+npx sql-chatbot-agent --db postgresql://localhost/mydb --code ./app
+
+# With Groq (cloud)
+npx sql-chatbot-agent --db postgresql://localhost/mydb --provider groq --key gsk_xxx --code ./app
 ```
 
 ## Configuration
@@ -47,7 +51,8 @@ Created by `sql-chatbot-agent init`:
 ```json
 {
   "databaseUrl": "postgresql://user:password@localhost:5432/your_database",
-  "groqApiKey": "your-groq-api-key",
+  "provider": "ollama",
+  "llmApiKey": "",
   "codePaths": ["./src"],
   "port": 3456,
   "secret": ""
@@ -57,17 +62,25 @@ Created by `sql-chatbot-agent init`:
 | Field | Type | Description |
 |-------|------|-------------|
 | `databaseUrl` | string | PostgreSQL connection URL (required) |
-| `groqApiKey` | string | Groq API key -- free at [console.groq.com](https://console.groq.com) (required) |
+| `provider` | string | LLM provider: `ollama`, `groq`, or `openai` (default: auto-detect) |
+| `llmApiKey` | string | API key for the LLM provider (not needed for Ollama) |
+| `llmModel` | string | Model name override (default: provider-specific) |
+| `llmBaseUrl` | string | API base URL override (default: provider-specific) |
 | `codePaths` | string[] | Directories to index for code questions (default: `["./src"]`) |
 | `port` | number | Port for the standalone server (default: `3456`) |
 | `secret` | string | Secret token for authentication (optional, recommended for production) |
+
+> **Backward compat:** `groqApiKey` is still accepted and mapped to `llmApiKey` automatically.
 
 ### CLI Flags
 
 | Flag | Short | Description |
 |------|-------|-------------|
 | `--db` | | PostgreSQL connection URL |
-| `--key` | | Groq API key |
+| `--provider` | | LLM provider: `ollama`, `groq`, or `openai` |
+| `--key` | | API key for the LLM provider |
+| `--model` | | Model name override |
+| `--base-url` | | API base URL override |
 | `--code` | | Directory to index (single path) |
 | `--port` | `-p` | Port for the standalone server |
 | `--secret` | | Secret token for authentication |
@@ -77,7 +90,11 @@ Created by `sql-chatbot-agent init`:
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection URL |
-| `GROQ_API_KEY` | Groq API key |
+| `LLM_PROVIDER` | LLM provider: `ollama`, `groq`, or `openai` |
+| `LLM_API_KEY` | API key for the LLM provider |
+| `LLM_MODEL` | Model name override |
+| `LLM_BASE_URL` | API base URL override |
+| `GROQ_API_KEY` | Groq API key (backward compat, same as `LLM_API_KEY`) |
 | `CHATBOT_SECRET` | Secret token for authentication |
 | `PORT` | Port for the standalone server |
 
@@ -88,6 +105,68 @@ Configuration is resolved in this order (highest priority first):
 1. **CLI flags** (`--db`, `--key`, etc.)
 2. **Environment variables** (`DATABASE_URL`, `GROQ_API_KEY`, etc.)
 3. **Config file** (`chatbot.config.json`)
+
+## Providers
+
+sql-chatbot-agent works with any OpenAI-compatible LLM API. Three providers are preconfigured:
+
+| Provider | Type | API Key | Default Model | Rate Limits |
+|----------|------|---------|---------------|-------------|
+| **Ollama** | Local | Not needed | `llama3.1:8b` | None (runs on your machine) |
+| **Groq** | Cloud | Required ([console.groq.com](https://console.groq.com)) | `llama-3.3-70b-versatile` | Free tier: 100K tokens/day |
+| **OpenAI** | Cloud | Required ([platform.openai.com](https://platform.openai.com)) | `gpt-4o-mini` | Pay-per-use |
+
+### Auto-detection
+
+If you don't specify `--provider`, the chatbot auto-detects:
+- **API key provided** → uses `groq`
+- **No API key** → uses `ollama`
+
+### Ollama (Recommended for Development)
+
+Ollama runs LLMs locally with no API key, no rate limits, and no cost.
+
+```bash
+# 1. Install Ollama (https://ollama.com)
+# 2. Pull a model
+ollama pull llama3.1:8b
+
+# 3. Start Ollama (runs in background)
+ollama serve
+
+# 4. Run the chatbot -- no --key needed
+npx sql-chatbot-agent --db postgresql://localhost/mydb --code ./src
+```
+
+To use a different model:
+
+```bash
+ollama pull mistral:7b
+npx sql-chatbot-agent --db postgresql://localhost/mydb --model mistral:7b
+```
+
+### Groq (Cloud, Free Tier)
+
+```bash
+npx sql-chatbot-agent --db postgresql://localhost/mydb --provider groq --key gsk_xxx
+```
+
+### OpenAI
+
+```bash
+npx sql-chatbot-agent --db postgresql://localhost/mydb --provider openai --key sk-xxx
+```
+
+### Any OpenAI-Compatible API
+
+Use `--base-url` and `--model` to connect to any OpenAI-compatible API:
+
+```bash
+npx sql-chatbot-agent --db postgresql://localhost/mydb \
+  --base-url http://my-llm-server:8080/v1 \
+  --key my-api-key \
+  --model my-model-name
+```
 
 ## Authentication
 
@@ -152,7 +231,8 @@ const app = express();
 
 app.use('/chatbot', sqlChatbot({
   databaseUrl: process.env.DATABASE_URL,
-  groqApiKey: process.env.GROQ_API_KEY,
+  provider: 'ollama',           // or 'groq', 'openai'
+  llmApiKey: process.env.LLM_API_KEY,  // not needed for ollama
   codePaths: ['./src'],
   secret: process.env.CHATBOT_SECRET,
 }));
@@ -245,7 +325,7 @@ data: {"type":"done"}
 - **Sensitive data filtering** -- automatically hides columns matching patterns like `password`, `secret`, `api_key`, `ssn`
 - **Chat widget with Shadow DOM** -- no CSS conflicts with your app
 - **Conversation history** -- the widget sends message history for contextual follow-ups
-- **Provider agnostic** -- defaults to Groq (free), works with any OpenAI-compatible API
+- **Multi-provider** -- Ollama (local, free), Groq (cloud, free tier), OpenAI, or any OpenAI-compatible API
 - **Lazy initialization** -- schema discovery and code indexing happen on first request, not at startup
 
 ## Supported Frameworks
@@ -269,7 +349,7 @@ The code indexer detects routes from:
 
 - Node.js >= 18
 - PostgreSQL database
-- A Groq API key (free) or any OpenAI-compatible LLM API key
+- An LLM provider: [Ollama](https://ollama.com) (local, free), [Groq](https://console.groq.com) (cloud, free tier), [OpenAI](https://platform.openai.com), or any OpenAI-compatible API
 
 ## License
 

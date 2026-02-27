@@ -3,6 +3,8 @@
 import { parseArgs } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { LLMProvider } from './config.js';
+import { PROVIDER_PRESETS } from './config.js';
 
 export interface CliFlags {
   db?: string;
@@ -10,12 +12,19 @@ export interface CliFlags {
   code?: string;
   port?: string;
   secret?: string;
+  provider?: string;
+  model?: string;
+  'base-url'?: string;
   subcommand?: string;
 }
 
 export interface FileConfig {
   databaseUrl?: string;
   groqApiKey?: string;
+  llmApiKey?: string;
+  provider?: LLMProvider;
+  llmModel?: string;
+  llmBaseUrl?: string;
   codePaths?: string[];
   port?: number;
   secret?: string;
@@ -23,7 +32,10 @@ export interface FileConfig {
 
 export interface MergedConfig {
   databaseUrl?: string;
-  groqApiKey?: string;
+  llmApiKey?: string;
+  provider?: LLMProvider;
+  llmModel?: string;
+  llmBaseUrl?: string;
   codePaths: string[];
   port: number;
   secret?: string;
@@ -42,6 +54,9 @@ export function parseCliArgs(argv: string[]): CliFlags {
       code: { type: 'string' },
       port: { type: 'string', short: 'p' },
       secret: { type: 'string' },
+      provider: { type: 'string' },
+      model: { type: 'string' },
+      'base-url': { type: 'string' },
     },
     strict: false,
   });
@@ -61,9 +76,18 @@ export function mergeConfig(
   env: Record<string, string | undefined>,
   flags: CliFlags,
 ): MergedConfig {
+  // Resolve API key: flags --key > env > file (llmApiKey or groqApiKey for backward compat)
+  const llmApiKey = flags.key || env.LLM_API_KEY || env.GROQ_API_KEY || file.llmApiKey || file.groqApiKey;
+
+  // Resolve provider: flags > env > file > auto-detect (has key → groq, no key → ollama)
+  const provider = (flags.provider || env.LLM_PROVIDER || file.provider || undefined) as LLMProvider | undefined;
+
   return {
     databaseUrl: flags.db || env.DATABASE_URL || file.databaseUrl,
-    groqApiKey: flags.key || env.GROQ_API_KEY || file.groqApiKey,
+    llmApiKey,
+    provider,
+    llmModel: flags.model || env.LLM_MODEL || file.llmModel,
+    llmBaseUrl: flags['base-url'] || env.LLM_BASE_URL || file.llmBaseUrl,
     codePaths: flags.code ? [flags.code] : file.codePaths || ['./src'],
     port: flags.port ? parseInt(flags.port, 10) : env.PORT ? parseInt(env.PORT, 10) : file.port || 3456,
     secret: flags.secret || env.CHATBOT_SECRET || file.secret,
@@ -77,7 +101,8 @@ export function runInit(dir: string): void {
   } else {
     const template = {
       databaseUrl: 'postgresql://user:password@localhost:5432/your_database',
-      groqApiKey: 'your-groq-api-key',
+      provider: 'ollama',
+      llmApiKey: '',
       codePaths: ['./src'],
       port: 3456,
       secret: '',
@@ -102,6 +127,15 @@ export function runInit(dir: string): void {
   }
 }
 
+export async function checkOllamaConnection(baseUrl: string): Promise<boolean> {
+  try {
+    const response = await fetch(baseUrl.replace(/\/v1$/, '/api/tags'), { signal: AbortSignal.timeout(3000) });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 function main(): void {
   // Dynamic imports to avoid loading express/cors at test time
   const flags = parseCliArgs(process.argv.slice(2));
@@ -120,10 +154,17 @@ function main(): void {
     process.exit(1);
   }
 
-  if (!config.groqApiKey) {
-    console.error('Error: API key is required.');
-    console.error('Provide --key flag, set GROQ_API_KEY env var, or add groqApiKey to chatbot.config.json');
-    process.exit(1);
+  // API key is only required for non-ollama providers
+  // resolveConfig() handles auto-detection and ollama dummy key
+  if (!config.llmApiKey && config.provider !== 'ollama') {
+    // Check if provider will auto-detect to ollama (no key = ollama)
+    // If explicit provider set to something other than ollama, key is required
+    if (config.provider) {
+      console.error('Error: API key is required for provider "' + config.provider + '".');
+      console.error('Provide --key flag, set LLM_API_KEY env var, or add llmApiKey to chatbot.config.json');
+      process.exit(1);
+    }
+    // No key and no explicit provider → will auto-detect to ollama in resolveConfig
   }
 
   if (!config.secret) {
@@ -131,8 +172,24 @@ function main(): void {
     console.warn('Set --secret flag, CHATBOT_SECRET env var, or add secret to chatbot.config.json');
   }
 
+  // Detect effective provider for connectivity check
+  const effectiveProvider = config.provider || (config.llmApiKey ? 'groq' : 'ollama');
+  const ollamaBaseUrl = config.llmBaseUrl || PROVIDER_PRESETS.ollama.baseUrl;
+
   // Import express and cors dynamically to keep test imports clean
-  import('express').then(async (expressModule) => {
+  (async () => {
+    // Check Ollama connectivity before starting server
+    if (effectiveProvider === 'ollama') {
+      const ok = await checkOllamaConnection(ollamaBaseUrl);
+      if (!ok) {
+        console.error('\nError: Ollama is not running at ' + ollamaBaseUrl);
+        console.error('Start it with: ollama serve');
+        console.error('Then pull a model: ollama pull llama3.1:8b\n');
+        process.exit(1);
+      }
+    }
+
+    const expressModule = await import('express');
     const express = expressModule.default;
     const corsModule = await import('cors');
     const cors = corsModule.default;
@@ -143,7 +200,10 @@ function main(): void {
 
     app.use('/chatbot', sqlChatbot({
       databaseUrl: config.databaseUrl!,
-      groqApiKey: config.groqApiKey,
+      llmApiKey: config.llmApiKey,
+      llmBaseUrl: config.llmBaseUrl,
+      llmModel: config.llmModel,
+      provider: config.provider,
       codePaths: config.codePaths,
       secret: config.secret,
     }));
@@ -160,13 +220,15 @@ function main(): void {
 </html>`);
     });
 
+    const providerLabel = config.provider || (config.llmApiKey ? 'groq' : 'ollama');
     app.listen(config.port, () => {
       console.log(`\nSQL Chatbot Agent running at http://localhost:${config.port}`);
+      console.log(`  Provider:     ${providerLabel}`);
       console.log(`  Chat widget:  http://localhost:${config.port}`);
       console.log(`  Health check: http://localhost:${config.port}/chatbot/api/health`);
       console.log(`  Auth: ${config.secret ? 'enabled' : 'DISABLED (no secret)'}\n`);
     });
-  });
+  })();
 }
 
 // Only run main when executed directly (not when imported for testing)
