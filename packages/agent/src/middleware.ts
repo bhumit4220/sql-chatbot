@@ -7,6 +7,16 @@ import { CodeIndexer } from './services/code-indexer.js';
 import { Orchestrator } from './services/orchestrator.js';
 import type { AgentConfig } from './config.js';
 
+function parseCookies(cookieHeader: string | undefined): Record<string, string> {
+  const cookies: Record<string, string> = {};
+  if (!cookieHeader) return cookies;
+  for (const pair of cookieHeader.split(';')) {
+    const [name, ...rest] = pair.trim().split('=');
+    if (name) cookies[name.trim()] = rest.join('=').trim();
+  }
+  return cookies;
+}
+
 export function sqlChatbot(
   userConfig: Partial<AgentConfig> & { databaseUrl: string; groqApiKey?: string },
 ) {
@@ -15,6 +25,25 @@ export function sqlChatbot(
 
   // Parse JSON bodies for POST routes
   router.use(express.json());
+
+  // Auth guard — returns true if authorized, false (and sends 401) if not
+  function requireAuth(req: express.Request, res: express.Response): boolean {
+    if (!config.secret) return true;
+
+    // Check Authorization: Bearer <token>
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      const [scheme, token] = authHeader.split(' ');
+      if (scheme === 'Bearer' && token === config.secret) return true;
+    }
+
+    // Check cookie
+    const cookies = parseCookies(req.headers.cookie);
+    if (cookies['chatbot_token'] === config.secret) return true;
+
+    res.status(401).json({ error: 'Unauthorized' });
+    return false;
+  }
 
   const schemaService = new SchemaService();
   const codeIndexer = new CodeIndexer();
@@ -45,6 +74,12 @@ export function sqlChatbot(
 
   // Serve widget bundle
   router.get('/widget.js', (_req, res) => {
+    if (config.secret) {
+      res.cookie('chatbot_token', config.secret, {
+        httpOnly: true,
+        sameSite: 'strict',
+      });
+    }
     res.sendFile(path.join(__dirname, '../widget/widget.js'));
   });
 
@@ -67,6 +102,7 @@ export function sqlChatbot(
 
   // Ask endpoint — SSE streaming
   router.post('/api/ask', async (req, res) => {
+    if (!requireAuth(req, res)) return;
     try {
       await ensureInit();
 
@@ -99,6 +135,7 @@ export function sqlChatbot(
 
   // Refresh endpoint
   router.post('/api/refresh', async (_req, res) => {
+    if (!requireAuth(_req, res)) return;
     try {
       await ensureInit();
       await schemaService.discover(config.databaseUrl);

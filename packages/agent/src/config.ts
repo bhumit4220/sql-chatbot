@@ -4,6 +4,7 @@ export interface AgentConfig {
   llmBaseUrl: string;
   llmApiKey: string;
   llmModel: string;
+  secret?: string;
 }
 
 export function resolveConfig(
@@ -31,5 +32,6 @@ export function resolveConfig(
     llmBaseUrl: userConfig.llmBaseUrl || process.env.LLM_BASE_URL || 'https://api.groq.com/openai/v1',
     llmApiKey,
     llmModel: userConfig.llmModel || process.env.LLM_MODEL || 'llama-3.3-70b-versatile',
+    secret: userConfig.secret || process.env.CHATBOT_SECRET || undefined,
   };
 }

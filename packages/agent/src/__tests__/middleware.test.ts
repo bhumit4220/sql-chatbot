@@ -52,6 +52,7 @@ vi.mock('../config.js', () => ({
     llmBaseUrl: 'https://api.groq.com/openai/v1',
     llmApiKey: 'test-key',
     llmModel: 'llama-3.3-70b-versatile',
+    secret: cfg.secret || undefined,
   })),
 }));
 
@@ -272,6 +273,44 @@ describe('sqlChatbot middleware', () => {
       expect(res.body).toEqual({ error: 'DB down' });
     });
 
+    it('returns 401 when secret is configured but request has no token', async () => {
+      const app = express();
+      app.use(express.json());
+      app.use('/chatbot', sqlChatbot({
+        databaseUrl: 'postgres://localhost/test',
+        groqApiKey: 'test-key',
+        secret: 'my-secret-token',
+      }));
+      const res = await request(app).post('/chatbot/api/ask').send({ question: 'How many users?' });
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ error: 'Unauthorized' });
+    });
+
+    it('allows request when secret matches via Authorization header', async () => {
+      mockHandleQuestion.mockReturnValue(asyncEvents([{ type: 'done' }]));
+      const app = express();
+      app.use(express.json());
+      app.use('/chatbot', sqlChatbot({ databaseUrl: 'postgres://localhost/test', groqApiKey: 'test-key', secret: 'my-secret-token' }));
+      const res = await request(app).post('/chatbot/api/ask').set('Authorization', 'Bearer my-secret-token').send({ question: 'How many users?' });
+      expect(res.status).toBe(200);
+    });
+
+    it('allows request when secret matches via cookie', async () => {
+      mockHandleQuestion.mockReturnValue(asyncEvents([{ type: 'done' }]));
+      const app = express();
+      app.use(express.json());
+      app.use('/chatbot', sqlChatbot({ databaseUrl: 'postgres://localhost/test', groqApiKey: 'test-key', secret: 'my-secret-token' }));
+      const res = await request(app).post('/chatbot/api/ask').set('Cookie', 'chatbot_token=my-secret-token').send({ question: 'How many users?' });
+      expect(res.status).toBe(200);
+    });
+
+    it('skips auth when no secret is configured', async () => {
+      mockHandleQuestion.mockReturnValue(asyncEvents([{ type: 'done' }]));
+      const app = createApp();
+      const res = await request(app).post('/chatbot/api/ask').send({ question: 'How many users?' });
+      expect(res.status).toBe(200);
+    });
+
     it('writes error event if error occurs during SSE streaming', async () => {
       mockHandleQuestion.mockImplementation(async function* () {
         yield { type: 'classifying' };
@@ -299,6 +338,15 @@ describe('sqlChatbot middleware', () => {
   // ----------------------------------------------------------
 
   describe('POST /api/refresh', () => {
+    it('returns 401 on refresh when secret is configured but missing', async () => {
+      const app = express();
+      app.use(express.json());
+      app.use('/chatbot', sqlChatbot({ databaseUrl: 'postgres://localhost/test', groqApiKey: 'test-key', secret: 'my-secret-token' }));
+      const res = await request(app).post('/chatbot/api/refresh');
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ error: 'Unauthorized' });
+    });
+
     it('re-discovers schema and re-indexes code', async () => {
       const app = createApp();
 
@@ -334,6 +382,19 @@ describe('sqlChatbot middleware', () => {
   // ----------------------------------------------------------
 
   describe('GET /widget.js', () => {
+    it('sets auth cookie when secret is configured', async () => {
+      const app = express();
+      app.use(express.json());
+      app.use('/chatbot', sqlChatbot({ databaseUrl: 'postgres://localhost/test', groqApiKey: 'test-key', secret: 'my-secret-token' }));
+      const res = await request(app).get('/chatbot/widget.js');
+      const cookies = res.headers['set-cookie'];
+      expect(cookies).toBeDefined();
+      const cookieStr = Array.isArray(cookies) ? cookies.join('; ') : cookies;
+      expect(cookieStr).toContain('chatbot_token=my-secret-token');
+      expect(cookieStr).toContain('HttpOnly');
+      expect(cookieStr).toContain('SameSite=Strict');
+    });
+
     it('attempts to serve the widget file', async () => {
       const app = createApp();
 
