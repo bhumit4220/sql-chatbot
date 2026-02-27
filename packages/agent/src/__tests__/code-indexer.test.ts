@@ -179,6 +179,31 @@ function App() {
     expect(routePaths).not.toContain('/_document');
   });
 
+  it('detects Next.js app/ router routes (page.tsx files)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'app/page.tsx', 'export default function Home() {}');
+    writeFile(dir, 'app/about/page.tsx', 'export default function About() {}');
+    writeFile(dir, 'app/users/[id]/page.tsx', 'export default function User() {}');
+    writeFile(dir, 'app/(auth)/login/page.tsx', 'export default function Login() {}');
+    // layout and loading should NOT produce routes
+    writeFile(dir, 'app/layout.tsx', 'export default function Layout() {}');
+    writeFile(dir, 'app/loading.tsx', 'export default function Loading() {}');
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/about' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/users/:id' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/login' }));
+
+    // layout and loading should not produce routes
+    const routePaths = routes.map(r => r.path);
+    expect(routePaths).not.toContain('/layout');
+    expect(routePaths).not.toContain('/loading');
+  });
+
   it('detects Rails routes from routes.rb', async () => {
     const dir = createTmpDir();
 
@@ -306,7 +331,7 @@ router.post('/api/users', handler);
 
     expect(cappedIndexer.fileCount()).toBe(2);
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('2')
+      expect.stringContaining('file cap reached')
     );
 
     warnSpy.mockRestore();

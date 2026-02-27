@@ -39,8 +39,6 @@ export class CodeIndexer {
     this.files = [];
     this.routes = [];
 
-    let capped = false;
-
     for (const codePath of codePaths) {
       if (this.files.length >= this.maxFiles) break;
       await this.scanDirectory(codePath, codePath);
@@ -183,8 +181,9 @@ export class CodeIndexer {
   }
 
   private detectReactRouterRoutes(file: IndexedFile): void {
-    // Match: <Route path="/something" ... /> or <Route path='/something' ... />
-    const pattern = /<Route\s+[^>]*path=["']([^"']+)["'][^>]*\/?>/gi;
+    // Match: <Route ... path="/something" ... /> — path can appear anywhere in the tag
+    // Line-oriented to avoid cross-tag matching issues
+    const pattern = /<Route\b.*?path=["']([^"']+)["']/gim;
     let match: RegExpExecArray | null;
 
     while ((match = pattern.exec(file.content)) !== null) {
@@ -210,48 +209,78 @@ export class CodeIndexer {
   }
 
   private detectNextJsRoutes(codePaths: string[]): void {
-    // Look for pages/ or app/ directory in indexed files
     for (const file of this.files) {
       const parts = file.relativePath.split(path.sep);
+
+      // Try pages/ router (Next.js 12 and earlier)
       const pagesIdx = parts.indexOf('pages');
+      if (pagesIdx !== -1) {
+        this.detectNextJsPagesRoute(file, parts, pagesIdx);
+        continue;
+      }
 
-      if (pagesIdx === -1) continue;
-
-      // Get the route portion after pages/
-      const routeParts = parts.slice(pagesIdx + 1);
-      const fileName = routeParts[routeParts.length - 1];
-
-      // Skip _app, _document, _error files
-      if (fileName.startsWith('_')) continue;
-
-      // Remove file extension
-      const baseName = fileName.replace(/\.[^.]+$/, '');
-
-      // Build route path
-      const dirParts = routeParts.slice(0, -1);
-      const allParts = baseName === 'index' ? dirParts : [...dirParts, baseName];
-
-      // Convert Next.js dynamic segments
-      const routePath = '/' + allParts
-        .map(part => {
-          // [...slug] -> :slug*
-          if (part.startsWith('[...') && part.endsWith(']')) {
-            return ':' + part.slice(4, -1) + '*';
-          }
-          // [id] -> :id
-          if (part.startsWith('[') && part.endsWith(']')) {
-            return ':' + part.slice(1, -1);
-          }
-          return part;
-        })
-        .join('/');
-
-      this.routes.push({
-        method: 'GET',
-        path: routePath,
-        file: file.relativePath,
-      });
+      // Try app/ router (Next.js 13+)
+      const appIdx = parts.indexOf('app');
+      if (appIdx !== -1) {
+        this.detectNextJsAppRoute(file, parts, appIdx);
+      }
     }
+  }
+
+  private detectNextJsPagesRoute(file: IndexedFile, parts: string[], pagesIdx: number): void {
+    const routeParts = parts.slice(pagesIdx + 1);
+    const fileName = routeParts[routeParts.length - 1];
+
+    // Skip _app, _document, _error files
+    if (fileName.startsWith('_')) return;
+
+    const baseName = fileName.replace(/\.[^.]+$/, '');
+    const dirParts = routeParts.slice(0, -1);
+    const allParts = baseName === 'index' ? dirParts : [...dirParts, baseName];
+
+    const routePath = '/' + this.convertNextJsDynamicSegments(allParts).join('/');
+
+    this.routes.push({
+      method: 'GET',
+      path: routePath,
+      file: file.relativePath,
+    });
+  }
+
+  private detectNextJsAppRoute(file: IndexedFile, parts: string[], appIdx: number): void {
+    const fileName = parts[parts.length - 1];
+    const baseName = fileName.replace(/\.[^.]+$/, '');
+
+    // In app/ router, only page files define routes
+    if (baseName !== 'page') return;
+
+    // Route comes from directory path (exclude the page.tsx filename)
+    const routeParts = parts.slice(appIdx + 1, -1);
+
+    // Skip route groups (directories starting with parentheses like (auth))
+    const filteredParts = routeParts.filter(p => !p.startsWith('('));
+
+    const routePath = '/' + this.convertNextJsDynamicSegments(filteredParts).join('/');
+
+    this.routes.push({
+      method: 'GET',
+      path: routePath,
+      file: file.relativePath,
+    });
+  }
+
+  private convertNextJsDynamicSegments(parts: string[]): string[] {
+    return parts.map(part => {
+      // [...slug] -> :slug*
+      if (part.startsWith('[...') && part.endsWith(']')) {
+        return ':' + part.slice(4, -1) + '*';
+      }
+      // [id] -> :id
+      if (part.startsWith('[') && part.endsWith(']')) {
+        return ':' + part.slice(1, -1);
+      }
+      return part;
+    });
   }
 
   private detectRailsRoutes(file: IndexedFile): void {
