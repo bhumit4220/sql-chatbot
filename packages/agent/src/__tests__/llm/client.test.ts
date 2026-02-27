@@ -26,7 +26,7 @@ describe('LLM Client', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     // Re-initialize to ensure clean state
-    initLLM('https://api.groq.com/openai/v1', 'test-key', 'llama-3.3-70b-versatile');
+    await initLLM('https://api.groq.com/openai/v1', 'test-key', 'llama-3.3-70b-versatile');
   });
 
   describe('uninitialized guard', () => {
@@ -36,7 +36,7 @@ describe('LLM Client', () => {
         callLLM([{ role: 'user' as const, content: 'test' }])
       ).rejects.toThrow('LLM client not initialized. Call initLLM() first.');
       // Re-initialize for subsequent tests
-      initLLM('https://api.groq.com/openai/v1', 'test-key', 'llama-3.3-70b-versatile');
+      await initLLM('https://api.groq.com/openai/v1', 'test-key', 'llama-3.3-70b-versatile');
     });
 
     it('should throw if streamLLM is called before initLLM', async () => {
@@ -44,14 +44,14 @@ describe('LLM Client', () => {
       const gen = streamLLM([{ role: 'user' as const, content: 'test' }]);
       await expect(gen.next()).rejects.toThrow('LLM client not initialized. Call initLLM() first.');
       // Re-initialize for subsequent tests
-      initLLM('https://api.groq.com/openai/v1', 'test-key', 'llama-3.3-70b-versatile');
+      await initLLM('https://api.groq.com/openai/v1', 'test-key', 'llama-3.3-70b-versatile');
     });
   });
 
   describe('initLLM', () => {
     it('should initialize the OpenAI client with provided params', async () => {
       const OpenAI = (await import('openai')).default;
-      initLLM('https://api.example.com/v1', 'my-key', 'my-model');
+      await initLLM('https://api.example.com/v1', 'my-key', 'my-model');
 
       expect(OpenAI).toHaveBeenCalledWith({
         apiKey: 'my-key',

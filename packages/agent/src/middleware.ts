@@ -58,7 +58,7 @@ export function sqlChatbot(
     if (initPromise) return initPromise;
     initPromise = (async () => {
       try {
-        initLLM(config.llmBaseUrl, config.llmApiKey, config.llmModel);
+        await initLLM(config.llmBaseUrl, config.llmApiKey, config.llmModel);
         await schemaService.discover(config.databaseUrl);
         await codeIndexer.index(config.codePaths);
         orchestrator = new Orchestrator({ schemaService, codeIndexer, databaseUrl: config.databaseUrl });

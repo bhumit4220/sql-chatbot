@@ -4,7 +4,7 @@ export const PROVIDER_PRESETS: Record<LLMProvider, { baseUrl: string; model: str
   groq:       { baseUrl: 'https://api.groq.com/openai/v1',  model: 'llama-3.3-70b-versatile' },
   ollama:     { baseUrl: 'http://localhost:11434/v1',        model: 'llama3.1:8b' },
   openai:     { baseUrl: 'https://api.openai.com/v1',       model: 'gpt-4o-mini' },
-  openrouter: { baseUrl: 'https://openrouter.ai/api/v1',    model: 'meta-llama/llama-3.3-70b-instruct:free' },
+  openrouter: { baseUrl: 'https://openrouter.ai/api/v1',    model: 'openrouter/free' },
 };
 
 export interface AgentConfig {
@@ -40,7 +40,7 @@ export function resolveConfig(
   const preset = PROVIDER_PRESETS[provider] || PROVIDER_PRESETS.groq;
 
   // For ollama, use a dummy key. For openrouter, use the bundled free-tier key.
-  const OPENROUTER_DEFAULT_KEY = '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';
+  const OPENROUTER_DEFAULT_KEY = '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';
   const resolvedApiKey = llmApiKey || (provider === 'ollama' ? 'ollama' : provider === 'openrouter' ? OPENROUTER_DEFAULT_KEY : undefined);
 
   if (!resolvedApiKey) {

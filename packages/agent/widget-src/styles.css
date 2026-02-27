@@ -95,6 +95,20 @@
   color: #1e293b;
 }
 
+.chatbot-msg.assistant strong {
+  font-weight: 600;
+}
+
+.chatbot-msg.assistant ul,
+.chatbot-msg.assistant ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.chatbot-msg.assistant li {
+  margin-bottom: 2px;
+}
+
 .chatbot-input {
   display: flex;
   padding: 12px;

@@ -172,7 +172,7 @@ function main(): void {
   }
 
   // Detect effective provider for connectivity check
-  const effectiveProvider = config.provider || (config.llmApiKey ? 'groq' : 'ollama');
+  const effectiveProvider = config.provider || (config.llmApiKey ? 'groq' : 'openrouter');
   const ollamaBaseUrl = config.llmBaseUrl || PROVIDER_PRESETS.ollama.baseUrl;
 
   // Import express and cors dynamically to keep test imports clean
@@ -219,7 +219,7 @@ function main(): void {
 </html>`);
     });
 
-    const providerLabel = config.provider || (config.llmApiKey ? 'groq' : 'ollama');
+    const providerLabel = config.provider || (config.llmApiKey ? 'groq' : 'openrouter');
     app.listen(config.port, () => {
       console.log(`\nSQL Chatbot Agent running at http://localhost:${config.port}`);
       console.log(`  Provider:     ${providerLabel}`);

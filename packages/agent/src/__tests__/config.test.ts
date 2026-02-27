@@ -225,7 +225,7 @@ describe('resolveConfig', () => {
       expect(config.provider).toBe('openrouter');
       expect(config.llmApiKey).toBeTruthy();
       expect(config.llmBaseUrl).toBe(PROVIDER_PRESETS.openrouter.baseUrl);
-      expect(config.llmModel).toContain(':free');
+      expect(config.llmModel).toBe('openrouter/free');
     });
 
     it('uses explicit provider preset for openai', () => {

@@ -72,6 +72,45 @@ function getPageContext(): PageContext {
   }
 }
 
+function renderMarkdown(text: string): string {
+  // Escape HTML to prevent XSS
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+
+  // Bold: **text**
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+
+  // Process lines for lists
+  const lines = html.split('\n')
+  const result: string[] = []
+  let inUl = false
+  let inOl = false
+
+  for (const line of lines) {
+    const ulMatch = line.match(/^[\s]*[*\-]\s+(.+)/)
+    const olMatch = line.match(/^[\s]*\d+\.\s+(.+)/)
+
+    if (ulMatch) {
+      if (!inUl) { if (inOl) { result.push('</ol>'); inOl = false } result.push('<ul>'); inUl = true }
+      result.push(`<li>${ulMatch[1]}</li>`)
+    } else if (olMatch) {
+      if (!inOl) { if (inUl) { result.push('</ul>'); inUl = false } result.push('<ol>'); inOl = true }
+      result.push(`<li>${olMatch[1]}</li>`)
+    } else {
+      if (inUl) { result.push('</ul>'); inUl = false }
+      if (inOl) { result.push('</ol>'); inOl = false }
+      result.push(line)
+    }
+  }
+  if (inUl) result.push('</ul>')
+  if (inOl) result.push('</ol>')
+
+  // Join non-list lines with <br/>
+  return result.join('\n').replace(/(?<!\>)\n(?!\<)/g, '<br/>')
+}
+
 export function ChatWidget({ baseUrl, position }: Props) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
@@ -210,7 +249,9 @@ export function ChatWidget({ baseUrl, position }: Props) {
           <div className="chatbot-messages">
             {messages.map((msg, i) => (
               <div key={i} className={`chatbot-msg ${msg.role}`}>
-                {msg.content || (loading && i === messages.length - 1 ? '...' : '')}
+                {msg.role === 'assistant' && msg.content
+                  ? <span dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                  : msg.content || (loading && i === messages.length - 1 ? '...' : '')}
               </div>
             ))}
             <div ref={messagesEndRef} />
