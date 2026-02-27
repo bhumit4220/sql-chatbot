@@ -30,7 +30,10 @@ export async function callLLM(
     response_format: options.jsonMode ? { type: 'json_object' } : undefined,
   });
 
-  return response.choices[0]?.message?.content || '';
+  const msg = response.choices[0]?.message as any;
+  // Some models (e.g. reasoning/thinking models) return content in the
+  // `reasoning` field instead of `content`. Fall back to that if content is empty.
+  return msg?.content || msg?.reasoning || '';
 }
 
 export async function* streamLLM(
@@ -48,9 +51,26 @@ export async function* streamLLM(
     stream: true,
   });
 
+  let hasContent = false;
+  let reasoningBuffer = '';
+
   for await (const chunk of stream) {
-    const content = chunk.choices[0]?.delta?.content;
-    if (content) yield content;
+    const delta = chunk.choices[0]?.delta as any;
+    const content = delta?.content;
+    const reasoning = delta?.reasoning;
+
+    if (content) {
+      hasContent = true;
+      yield content;
+    } else if (reasoning) {
+      // Buffer reasoning in case model never sends content
+      reasoningBuffer += reasoning;
+    }
+  }
+
+  // If model only used reasoning tokens (no content at all), yield the reasoning
+  if (!hasContent && reasoningBuffer) {
+    yield reasoningBuffer;
   }
 }
 

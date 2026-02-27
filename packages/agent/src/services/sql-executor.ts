@@ -48,6 +48,13 @@ export function validateSql(sql: string): ValidationResult {
   trimmed = trimmed.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
   trimmed = trimmed.trim();
 
+  // Fix common LLM formatting issues: missing spaces between SQL keywords
+  // e.g. "SELECTCOUNT(*)" → "SELECT COUNT(*)", "SELECTDISTINCT" → "SELECT DISTINCT"
+  trimmed = trimmed.replace(
+    /^SELECT(?=[A-Z])/i,
+    'SELECT '
+  );
+
   // 1. Must be a single statement: reject if contains `;` followed by another statement
   const parts = trimmed.split(';').filter((p) => p.trim().length > 0);
   if (parts.length > 1) {
