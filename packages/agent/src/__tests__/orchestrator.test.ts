@@ -406,4 +406,37 @@ describe('Orchestrator', () => {
 
     expect(events.some((e) => e.type === 'done')).toBe(true);
   });
+
+  // 11. SQL generation returns invalid/empty SQL
+  it('11. yields descriptive error when SQL generation fails', async () => {
+    mockClassification('data');
+    // LLM returns non-JSON garbage instead of { sql: "SELECT ..." }
+    mockCallLLM.mockResolvedValueOnce('I cannot generate that query');
+
+    const input: AskInput = { question: 'Do something impossible' };
+    const events = await collectEvents(orchestrator.handleQuestion(input));
+
+    const error = events.find((e) => e.type === 'error');
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('Failed to generate a SQL query');
+    // Should NOT have called validateSql or executeSql
+    expect(mockValidateSql).not.toHaveBeenCalled();
+    expect(mockExecuteSql).not.toHaveBeenCalled();
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+  });
+
+  // 12. SQL generation returns JSON with missing sql field
+  it('12. yields error when LLM returns JSON without sql field', async () => {
+    mockClassification('data');
+    mockCallLLM.mockResolvedValueOnce(JSON.stringify({ explanation: 'no sql here' }));
+
+    const input: AskInput = { question: 'Bad generation' };
+    const events = await collectEvents(orchestrator.handleQuestion(input));
+
+    const error = events.find((e) => e.type === 'error');
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('Failed to generate a SQL query');
+    expect(mockValidateSql).not.toHaveBeenCalled();
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+  });
 });

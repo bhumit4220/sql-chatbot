@@ -163,8 +163,8 @@ export function buildAnswerMessages(input: AnswerInput): ChatCompletionMessagePa
     userContent += `\n\nCurrent page context:\n${input.pageContext}`;
   }
 
-  // Add navigation links for navigation type
-  if (input.navigationLinks && input.navigationLinks.length > 0 && input.type === 'navigation') {
+  // Add navigation links for navigation/guidance types
+  if (input.navigationLinks && input.navigationLinks.length > 0 && (input.type === 'navigation' || input.type === 'guidance')) {
     userContent += `\n\nAvailable navigation links:\n${input.navigationLinks.join('\n')}`;
   }
 

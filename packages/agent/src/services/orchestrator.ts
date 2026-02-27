@@ -124,6 +124,11 @@ export class Orchestrator {
     const sqlRaw = await callLLM(sqlMessages, { jsonMode: true });
     const sqlParsed = this.parseSqlGeneration(sqlRaw);
 
+    if (!sqlParsed.sql) {
+      yield { type: 'error', message: 'Failed to generate a SQL query for this question.' };
+      return;
+    }
+
     yield { type: 'sql', sql: sqlParsed.sql };
 
     // Validate SQL
@@ -246,13 +251,13 @@ export class Orchestrator {
   private parseSqlGeneration(raw: string): { sql: string; explanation: string } {
     try {
       const parsed = JSON.parse(raw);
-      return {
-        sql: parsed.sql || '',
-        explanation: parsed.explanation || '',
-      };
+      if (!parsed.sql || typeof parsed.sql !== 'string') {
+        return { sql: '', explanation: parsed.explanation || '' };
+      }
+      return { sql: parsed.sql, explanation: parsed.explanation || '' };
     } catch {
-      // If JSON parsing fails, try to extract SQL directly
-      return { sql: raw.trim(), explanation: '' };
+      // Non-JSON response — don't treat garbled text as SQL
+      return { sql: '', explanation: '' };
     }
   }
 
