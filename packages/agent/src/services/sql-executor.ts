@@ -22,7 +22,7 @@ export interface SqlResult {
 
 const KEYWORD_BLOCKLIST = [
   'INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE',
-  'GRANT', 'TRUNCATE', 'EXECUTE', 'REVOKE', 'COPY',
+  'GRANT', 'TRUNCATE', 'EXECUTE', 'REVOKE', 'COPY', 'INTO',
 ];
 
 const FUNCTION_BLOCKLIST = [
@@ -33,6 +33,7 @@ const FUNCTION_BLOCKLIST = [
 
 const CATALOG_BLOCKLIST = [
   'pg_shadow', 'pg_roles', 'pg_authid', 'pg_user',
+  'information_schema',
 ];
 
 const AGGREGATE_PATTERN = /\b(COUNT|SUM|AVG|MIN|MAX)\s*\(/i;

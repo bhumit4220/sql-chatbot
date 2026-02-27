@@ -123,6 +123,30 @@ describe('validateSql', () => {
     expect(result.valid).toBe(false);
   });
 
+  it('rejects SELECT INTO (creates a table)', () => {
+    const result = validateSql('SELECT id INTO temp_table FROM customers');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('INTO');
+  });
+
+  it('rejects information_schema access', () => {
+    const result = validateSql('SELECT table_name FROM information_schema.tables');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('information_schema');
+  });
+
+  it('rejects schema-prefixed catalog access (pg_catalog.pg_shadow)', () => {
+    const result = validateSql('SELECT * FROM pg_catalog.pg_shadow');
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('pg_shadow');
+  });
+
+  it('does not add LIMIT to aggregate with GROUP BY', () => {
+    const result = validateSql('SELECT status, COUNT(*) FROM customers GROUP BY status');
+    expect(result.valid).toBe(true);
+    expect(result.sql!.toUpperCase()).not.toContain('LIMIT');
+  });
+
   it('17. does not false-positive on column names containing blocked words', () => {
     // "updated_at" contains "update" as a substring, but should NOT be blocked
     const result = validateSql('SELECT updated_at, deleted_at, created_at FROM jobs');
