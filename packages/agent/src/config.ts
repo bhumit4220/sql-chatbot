@@ -39,8 +39,9 @@ export function resolveConfig(
 
   const preset = PROVIDER_PRESETS[provider] || PROVIDER_PRESETS.groq;
 
-  // For ollama/openrouter, use a dummy API key if none provided (OpenAI SDK requires one)
-  const resolvedApiKey = llmApiKey || (provider === 'ollama' || provider === 'openrouter' ? 'none' : undefined);
+  // For ollama, use a dummy key. For openrouter, use the bundled free-tier key.
+  const OPENROUTER_DEFAULT_KEY = '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';
+  const resolvedApiKey = llmApiKey || (provider === 'ollama' ? 'ollama' : provider === 'openrouter' ? OPENROUTER_DEFAULT_KEY : undefined);
 
   if (!resolvedApiKey) {
     throw new Error(
