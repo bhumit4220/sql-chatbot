@@ -4,6 +4,8 @@
   "description": "AI chatbot middleware for Express apps with PostgreSQL",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": ["dist", "widget"],
+  "engines": { "node": ">=18" },
   "scripts": {
     "build": "tsc",
     "test": "vitest run",

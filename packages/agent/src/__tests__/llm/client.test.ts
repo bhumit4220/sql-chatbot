@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { initLLM, callLLM, streamLLM } from '../../llm/client.js';
+import { initLLM, callLLM, streamLLM, _resetForTesting } from '../../llm/client.js';
 
 // Mock the OpenAI module
 vi.mock('openai', () => {
@@ -27,6 +27,25 @@ describe('LLM Client', () => {
     vi.clearAllMocks();
     // Re-initialize to ensure clean state
     initLLM('https://api.groq.com/openai/v1', 'test-key', 'llama-3.3-70b-versatile');
+  });
+
+  describe('uninitialized guard', () => {
+    it('should throw if callLLM is called before initLLM', async () => {
+      _resetForTesting();
+      await expect(
+        callLLM([{ role: 'user' as const, content: 'test' }])
+      ).rejects.toThrow('LLM client not initialized. Call initLLM() first.');
+      // Re-initialize for subsequent tests
+      initLLM('https://api.groq.com/openai/v1', 'test-key', 'llama-3.3-70b-versatile');
+    });
+
+    it('should throw if streamLLM is called before initLLM', async () => {
+      _resetForTesting();
+      const gen = streamLLM([{ role: 'user' as const, content: 'test' }]);
+      await expect(gen.next()).rejects.toThrow('LLM client not initialized. Call initLLM() first.');
+      // Re-initialize for subsequent tests
+      initLLM('https://api.groq.com/openai/v1', 'test-key', 'llama-3.3-70b-versatile');
+    });
   });
 
   describe('initLLM', () => {

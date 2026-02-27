@@ -8,6 +8,8 @@ describe('resolveConfig', () => {
     process.env = { ...originalEnv };
     delete process.env.LLM_API_KEY;
     delete process.env.GROQ_API_KEY;
+    delete process.env.LLM_BASE_URL;
+    delete process.env.LLM_MODEL;
   });
 
   afterEach(() => {
@@ -99,6 +101,40 @@ describe('resolveConfig', () => {
     });
 
     expect(config.codePaths).toEqual(['./app', './lib']);
+  });
+
+  it('should fall back to LLM_BASE_URL env var', () => {
+    process.env.LLM_BASE_URL = 'http://localhost:8080/v1';
+
+    const config = resolveConfig({
+      databaseUrl: 'postgres://localhost:5432/testdb',
+      llmApiKey: 'test-key',
+    });
+
+    expect(config.llmBaseUrl).toBe('http://localhost:8080/v1');
+  });
+
+  it('should fall back to LLM_MODEL env var', () => {
+    process.env.LLM_MODEL = 'qwen3-4b';
+
+    const config = resolveConfig({
+      databaseUrl: 'postgres://localhost:5432/testdb',
+      llmApiKey: 'test-key',
+    });
+
+    expect(config.llmModel).toBe('qwen3-4b');
+  });
+
+  it('should prefer explicit llmBaseUrl over LLM_BASE_URL env var', () => {
+    process.env.LLM_BASE_URL = 'http://localhost:8080/v1';
+
+    const config = resolveConfig({
+      databaseUrl: 'postgres://localhost:5432/testdb',
+      llmApiKey: 'test-key',
+      llmBaseUrl: 'https://api.openai.com/v1',
+    });
+
+    expect(config.llmBaseUrl).toBe('https://api.openai.com/v1');
   });
 
   it('should use custom llmBaseUrl when provided', () => {

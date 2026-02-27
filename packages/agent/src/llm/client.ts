@@ -54,4 +54,10 @@ export async function* streamLLM(
   }
 }
 
+/** @internal Reset client state — for testing only */
+export function _resetForTesting(): void {
+  client = undefined as any;
+  defaultModel = undefined as any;
+}
+
 export type { ChatCompletionMessageParam };

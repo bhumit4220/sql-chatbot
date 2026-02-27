@@ -28,8 +28,8 @@ export function resolveConfig(
   return {
     databaseUrl: userConfig.databaseUrl,
     codePaths: userConfig.codePaths || ['./src'],
-    llmBaseUrl: userConfig.llmBaseUrl || 'https://api.groq.com/openai/v1',
+    llmBaseUrl: userConfig.llmBaseUrl || process.env.LLM_BASE_URL || 'https://api.groq.com/openai/v1',
     llmApiKey,
-    llmModel: userConfig.llmModel || 'llama-3.3-70b-versatile',
+    llmModel: userConfig.llmModel || process.env.LLM_MODEL || 'llama-3.3-70b-versatile',
   };
 }
