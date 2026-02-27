@@ -77,7 +77,7 @@ export function mergeConfig(
   flags: CliFlags,
 ): MergedConfig {
   // Resolve API key: flags --key > env > file (llmApiKey or groqApiKey for backward compat)
-  const llmApiKey = flags.key || env.LLM_API_KEY || env.GROQ_API_KEY || file.llmApiKey || file.groqApiKey;
+  const llmApiKey = flags.key || env.LLM_API_KEY || env.GROQ_API_KEY || env.OPENROUTER_API_KEY || file.llmApiKey || file.groqApiKey;
 
   // Resolve provider: flags > env > file > auto-detect (has key → groq, no key → ollama)
   const provider = (flags.provider || env.LLM_PROVIDER || file.provider || undefined) as LLMProvider | undefined;
@@ -154,16 +154,12 @@ function main(): void {
     process.exit(1);
   }
 
-  // API key is only required for non-ollama/non-openrouter providers
-  // resolveConfig() handles auto-detection and dummy keys
-  if (!config.llmApiKey && config.provider !== 'ollama' && config.provider !== 'openrouter') {
-    // If explicit provider set that needs a key, require it
-    if (config.provider) {
-      console.error('Error: API key is required for provider "' + config.provider + '".');
-      console.error('Provide --key flag, set LLM_API_KEY env var, or add llmApiKey to chatbot.config.json');
-      process.exit(1);
-    }
-    // No key and no explicit provider → will auto-detect to ollama in resolveConfig
+  // API key is required for all providers except ollama
+  if (!config.llmApiKey && config.provider !== 'ollama') {
+    console.error('Error: API key is required.');
+    console.error('Provide --key flag, set LLM_API_KEY or OPENROUTER_API_KEY env var.');
+    console.error('Get a free OpenRouter key at: https://openrouter.ai/keys');
+    process.exit(1);
   }
 
   if (!config.secret) {

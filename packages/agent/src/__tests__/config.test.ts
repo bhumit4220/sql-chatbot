@@ -8,6 +8,7 @@ describe('resolveConfig', () => {
     process.env = { ...originalEnv };
     delete process.env.LLM_API_KEY;
     delete process.env.GROQ_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
     delete process.env.LLM_BASE_URL;
     delete process.env.LLM_MODEL;
     delete process.env.LLM_PROVIDER;
@@ -42,15 +43,22 @@ describe('resolveConfig', () => {
   it('should throw if no API key and provider requires one', () => {
     expect(() =>
       resolveConfig({ databaseUrl: 'postgres://localhost:5432/testdb', provider: 'groq' })
-    ).toThrow('An LLM API key is required');
+    ).toThrow('API key is required');
   });
 
-  it('should not throw when no API key with openrouter (free)', () => {
+  it('should not throw when no API key with openrouter if OPENROUTER_API_KEY env set', () => {
+    process.env.OPENROUTER_API_KEY = 'or-key';
     const config = resolveConfig({
       databaseUrl: 'postgres://localhost:5432/testdb',
       provider: 'openrouter',
     });
-    expect(config.llmApiKey).toBeTruthy();
+    expect(config.llmApiKey).toBe('or-key');
+  });
+
+  it('should throw when no API key with openrouter and no env var', () => {
+    expect(() =>
+      resolveConfig({ databaseUrl: 'postgres://localhost:5432/testdb', provider: 'openrouter' })
+    ).toThrow('API key is required');
   });
 
   it('should use groqApiKey as fallback for llmApiKey', () => {
@@ -90,6 +98,17 @@ describe('resolveConfig', () => {
     });
 
     expect(config.llmApiKey).toBe('env-groq-key');
+  });
+
+  it('should fall back to OPENROUTER_API_KEY env var', () => {
+    process.env.OPENROUTER_API_KEY = 'env-or-key';
+
+    const config = resolveConfig({
+      databaseUrl: 'postgres://localhost:5432/testdb',
+    });
+
+    expect(config.llmApiKey).toBe('env-or-key');
+    expect(config.provider).toBe('openrouter');
   });
 
   it('should prefer LLM_API_KEY over GROQ_API_KEY env var', () => {
@@ -181,15 +200,22 @@ describe('resolveConfig', () => {
       expect(config.llmModel).toBe(PROVIDER_PRESETS.groq.model);
     });
 
-    it('auto-detects openrouter when no API key is provided', () => {
+    it('auto-detects openrouter when OPENROUTER_API_KEY env is set', () => {
+      process.env.OPENROUTER_API_KEY = 'or-key';
       const config = resolveConfig({
         databaseUrl: 'postgres://localhost/testdb',
       });
 
       expect(config.provider).toBe('openrouter');
-      expect(config.llmApiKey).toBeTruthy();
+      expect(config.llmApiKey).toBe('or-key');
       expect(config.llmBaseUrl).toBe(PROVIDER_PRESETS.openrouter.baseUrl);
       expect(config.llmModel).toBe(PROVIDER_PRESETS.openrouter.model);
+    });
+
+    it('throws when no API key and no provider set', () => {
+      expect(() =>
+        resolveConfig({ databaseUrl: 'postgres://localhost/testdb' })
+      ).toThrow('API key is required');
     });
 
     it('uses explicit provider preset for groq', () => {
@@ -220,10 +246,11 @@ describe('resolveConfig', () => {
       const config = resolveConfig({
         databaseUrl: 'postgres://localhost/testdb',
         provider: 'openrouter',
+        llmApiKey: 'or-key',
       });
 
       expect(config.provider).toBe('openrouter');
-      expect(config.llmApiKey).toBeTruthy();
+      expect(config.llmApiKey).toBe('or-key');
       expect(config.llmBaseUrl).toBe(PROVIDER_PRESETS.openrouter.baseUrl);
       expect(config.llmModel).toBe('openrouter/free');
     });

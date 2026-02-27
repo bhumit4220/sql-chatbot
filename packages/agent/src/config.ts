@@ -29,23 +29,24 @@ export function resolveConfig(
     userConfig.llmApiKey ||
     userConfig.groqApiKey ||
     process.env.LLM_API_KEY ||
-    process.env.GROQ_API_KEY;
+    process.env.GROQ_API_KEY ||
+    process.env.OPENROUTER_API_KEY;
 
-  // Auto-detect provider: explicit > has key → groq, no key → openrouter (free)
+  // Auto-detect provider: explicit > env > detect from key source > default groq
   const provider: LLMProvider =
     userConfig.provider ||
     (process.env.LLM_PROVIDER as LLMProvider | undefined) ||
-    (llmApiKey ? 'groq' : 'openrouter');
+    (process.env.OPENROUTER_API_KEY ? 'openrouter' : 'groq');
 
   const preset = PROVIDER_PRESETS[provider] || PROVIDER_PRESETS.groq;
 
-  // For ollama, use a dummy key. For openrouter, use the bundled free-tier key.
-  const OPENROUTER_DEFAULT_KEY = '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';
-  const resolvedApiKey = llmApiKey || (provider === 'ollama' ? 'ollama' : provider === 'openrouter' ? OPENROUTER_DEFAULT_KEY : undefined);
+  // For ollama, use a dummy key (no auth needed)
+  const resolvedApiKey = llmApiKey || (provider === 'ollama' ? 'ollama' : undefined);
 
   if (!resolvedApiKey) {
     throw new Error(
-      'An LLM API key is required. Provide llmApiKey, groqApiKey, or set LLM_API_KEY / GROQ_API_KEY environment variable. Or use provider: "openrouter" for free models.'
+      'An LLM API key is required. Provide --key flag, set LLM_API_KEY or OPENROUTER_API_KEY env var.\n' +
+      'Get a free key at: https://openrouter.ai/keys'
     );
   }
 
