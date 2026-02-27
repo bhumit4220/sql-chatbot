@@ -125,9 +125,9 @@ export class CodeIndexer {
   private async scanDirectory(dir: string, basePath: string): Promise<void> {
     if (this.files.length >= this.maxFiles) return;
 
-    let entries: Awaited<ReturnType<typeof fs.readdir>>;
+    let entries: import('node:fs').Dirent[];
     try {
-      entries = await fs.readdir(dir, { withFileTypes: true });
+      entries = await fs.readdir(dir, { withFileTypes: true }) as import('node:fs').Dirent[];
     } catch {
       return; // skip unreadable directories
     }

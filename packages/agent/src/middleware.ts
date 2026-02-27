@@ -13,6 +13,9 @@ export function sqlChatbot(
   const router = express.Router();
   const config = resolveConfig(userConfig);
 
+  // Parse JSON bodies for POST routes
+  router.use(express.json());
+
   const schemaService = new SchemaService();
   const codeIndexer = new CodeIndexer();
   let orchestrator: Orchestrator;
