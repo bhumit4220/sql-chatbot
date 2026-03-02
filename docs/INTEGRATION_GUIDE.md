@@ -616,14 +616,85 @@ Your widget tag becomes:
 
 ---
 
+## Database Best Practices
+
+### Create a Read-Only Database User
+
+**Never use your application's main database user for the chatbot.** Create a dedicated read-only user instead. This is defense-in-depth — even though the chatbot already enforces `READ ONLY` transactions and blocks destructive SQL, a restricted DB user adds another layer of protection.
+
+**PostgreSQL:**
+
+```sql
+-- Connect as superuser/admin
+psql -U postgres -d your_database
+
+-- 1. Create the chatbot user
+CREATE USER chatbot_reader WITH PASSWORD 'a-strong-password-here';
+
+-- 2. Grant connect access
+GRANT CONNECT ON DATABASE your_database TO chatbot_reader;
+
+-- 3. Grant read-only access to all existing tables
+GRANT USAGE ON SCHEMA public TO chatbot_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO chatbot_reader;
+
+-- 4. Auto-grant SELECT on any future tables
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO chatbot_reader;
+
+-- 5. (Optional) Revoke access to specific sensitive tables
+REVOKE SELECT ON sensitive_table FROM chatbot_reader;
+```
+
+Then use this user in your DATABASE_URL:
+
+```bash
+export DATABASE_URL="postgresql://chatbot_reader:a-strong-password-here@your-db-host:5432/your_database"
+```
+
+### Remote Database Connections
+
+The database doesn't need to be on the same server as the chatbot. Just use the remote host in the URL:
+
+```bash
+# AWS RDS
+export DATABASE_URL="postgresql://chatbot_reader:pass@mydb.abc123.us-east-1.rds.amazonaws.com:5432/mydb"
+
+# DigitalOcean Managed DB
+export DATABASE_URL="postgresql://chatbot_reader:pass@db-pool.ondigitalocean.com:25060/mydb?sslmode=require"
+
+# Supabase
+export DATABASE_URL="postgresql://chatbot_reader:pass@db.abcdefg.supabase.co:5432/postgres"
+
+# Any remote server
+export DATABASE_URL="postgresql://chatbot_reader:pass@203.0.113.50:5432/mydb"
+```
+
+**Requirements for remote DB:**
+- The chatbot server can reach the DB host (check firewall/security groups)
+- The DB user has `SELECT` permission
+- If the DB requires SSL, add `?sslmode=require` to the URL
+
+### Connection Security Tips
+
+- **Use SSL** for remote connections: add `?sslmode=require` to your DATABASE_URL
+- **Whitelist IPs** in your DB's firewall/security group — only allow the chatbot server's IP
+- **Don't expose the DB publicly** — use private networking between your app server and DB if possible (e.g., VPC on AWS, private network on DigitalOcean)
+- **Rotate passwords** periodically for the chatbot DB user
+
+---
+
 ## Security Checklist
 
-- [ ] **Set a secret token** -- `--secret` flag or `CHATBOT_SECRET` env var. Without it, anyone can query your database.
+- [ ] **Create a read-only DB user** -- never use your app's main DB credentials (see [Database Best Practices](#database-best-practices) above)
+- [ ] **Set a secret token** -- `--secret` flag or `CHATBOT_SECRET` env var. Without it, anyone can query your database through the chatbot.
 - [ ] **Never hardcode API keys** in source code. Always use environment variables.
 - [ ] **Use HTTPS** in production (via Nginx/Caddy with Let's Encrypt).
+- [ ] **Use SSL for DB connections** -- add `?sslmode=require` to DATABASE_URL for remote databases.
+- [ ] **Whitelist DB access** -- only allow the chatbot server's IP in your DB firewall/security groups.
 - [ ] **SQL is read-only** -- all queries run inside `SET TRANSACTION READ ONLY`. Destructive keywords (`DROP`, `DELETE`, etc.) are blocked at the application level.
 - [ ] **Sensitive columns are hidden** -- columns matching patterns like `password`, `secret`, `api_key`, `ssn` are automatically excluded from the schema sent to the LLM.
-- [ ] **Restrict network access** -- if the chatbot only needs to be reached from your frontend, don't expose port 3456 publicly. Use Nginx reverse proxy instead.
+- [ ] **Restrict network access** -- don't expose port 3456 publicly. Use Nginx reverse proxy instead.
+- [ ] **Keep it updated** -- `npm install -g sql-chatbot-agent@latest` or `git pull` to get security fixes.
 
 ---
 
