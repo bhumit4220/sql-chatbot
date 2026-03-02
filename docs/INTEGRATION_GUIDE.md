@@ -164,6 +164,26 @@ export LLM_API_KEY="sk-xxx"                # OpenAI
 export CHATBOT_SECRET="a-long-random-string-here"
 ```
 
+#### The `--code` Flag: Point to Your Source Code
+
+The `--code` flag tells the chatbot where your source code lives so it can detect routes and help with navigation/guidance questions. It's **not** limited to `./src` — use whatever directory your framework keeps code in. You can pass multiple `--code` flags.
+
+| Framework | Typical `--code` value |
+|-----------|----------------------|
+| **Express / React / Next.js / Hono** | `--code ./src` |
+| **Rails** | `--code ./app --code ./config` |
+| **Django** | `--code ./myapp` (your app directories) |
+| **Laravel** | `--code ./app --code ./routes` |
+| **Flask / FastAPI** | `--code ./app` or `--code .` |
+| **Spring Boot** | `--code ./src/main/java` |
+| **Go (Gin / Echo / Fiber)** | `--code ./cmd --code ./internal` |
+| **Phoenix / Elixir** | `--code ./lib` |
+| **SvelteKit / Nuxt** | `--code ./src` |
+| **ASP.NET** | `--code ./Controllers --code ./Program.cs` |
+| **Sinatra** | `--code .` |
+
+**Tip:** When in doubt, just point to your project root: `--code /path/to/your/project`. The chatbot automatically skips `node_modules`, `.git`, `dist`, `build`, `vendor`, `target`, `__pycache__`, etc.
+
 #### Step 3: Start the Server
 
 **If installed via npm:**
