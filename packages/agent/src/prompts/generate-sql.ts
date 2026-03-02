@@ -25,6 +25,9 @@ RULES:
 11. For "top N" or "most recent" queries, ALWAYS include relevant dates (created_at, updated_at, release_date) and key attributes (name, title, status, type) — give enough context for a meaningful answer
 12. NEVER return just IDs or a single column when additional context columns are available — the answer should be self-contained
 13. Use COALESCE for nullable date/number columns to provide fallback values where sensible
+14. SOFT DELETE: When a table has "-- SOFT DELETE" annotation, ALWAYS add WHERE deleted_at IS NULL to exclude deleted records, unless the user explicitly asks about deleted items
+15. POLYMORPHIC JOINS: When a table has "-- POLYMORPHIC: X_type + X_id", join using both: WHERE X_type = 'ModelName' AND X_id = target.id. The type value is the singular PascalCase of the target table name (e.g. titles → "Title", users → "User")
+16. LOOKUP VALUES: When a table has "-- VALUES: id=name" mappings, use these exact IDs in WHERE clauses. For example, if categories shows "1=TV Shows, 2=Movie" and the user asks about movies, use category_id = 2
 
 Respond with JSON only: {"sql": "<the SQL query>", "explanation": "<brief explanation of what the query does>"}`;
 

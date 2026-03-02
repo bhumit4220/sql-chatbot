@@ -112,4 +112,41 @@ describe('buildGenerateSqlMessages', () => {
     expect(systemContent).toContain('"sql"');
     expect(systemContent).toContain('"explanation"');
   });
+
+  it('should include SOFT DELETE rule in system prompt', () => {
+    const messages = buildGenerateSqlMessages({
+      question: 'test',
+      schema: baseSchema,
+      history: [],
+    });
+
+    const systemContent = messages[0].content as string;
+    expect(systemContent).toContain('SOFT DELETE');
+    expect(systemContent).toContain('deleted_at IS NULL');
+  });
+
+  it('should include POLYMORPHIC JOINS rule in system prompt', () => {
+    const messages = buildGenerateSqlMessages({
+      question: 'test',
+      schema: baseSchema,
+      history: [],
+    });
+
+    const systemContent = messages[0].content as string;
+    expect(systemContent).toContain('POLYMORPHIC');
+    expect(systemContent).toContain('X_type');
+    expect(systemContent).toContain('X_id');
+  });
+
+  it('should include LOOKUP VALUES rule in system prompt', () => {
+    const messages = buildGenerateSqlMessages({
+      question: 'test',
+      schema: baseSchema,
+      history: [],
+    });
+
+    const systemContent = messages[0].content as string;
+    expect(systemContent).toContain('LOOKUP VALUES');
+    expect(systemContent).toContain('VALUES: id=name');
+  });
 });
