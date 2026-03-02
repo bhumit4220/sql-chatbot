@@ -227,7 +227,9 @@ function main(): void {
 }
 
 // Only run main when executed directly (not when imported for testing)
-const isDirectRun = process.argv[1]?.endsWith('cli.js') || process.argv[1]?.endsWith('cli.ts');
+const isDirectRun = process.argv[1]?.endsWith('cli.js')
+  || process.argv[1]?.endsWith('cli.ts')
+  || process.argv[1]?.endsWith('sql-chatbot-agent');
 if (isDirectRun) {
   main();
 }
