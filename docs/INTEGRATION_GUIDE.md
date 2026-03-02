@@ -1,72 +1,209 @@
-# sql-chatbot-agent: Production Integration Guide
+# sql-chatbot-agent: Integration & Deployment Guide
 
-How to add the AI chatbot to your live project server.
+How to integrate the AI chatbot into any PostgreSQL web app and keep it running on a server.
+
+> **Note:** The latest features (schema enrichment, CLI standalone, 17-framework route detection) are on the `v1-development` branch and NOT yet published to npm. Use the **Git-based installation** until a new npm version is published. Once published, the **npm approach** is the simplest way to get started.
 
 ## Table of Contents
 
-- [Option A: Standalone Server (Recommended)](#option-a-standalone-server-recommended)
-- [Option B: Express Middleware](#option-b-express-middleware)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+  - [Approach 1: npm / npx (Simplest)](#approach-1-npm--npx-simplest)
+  - [Approach 2: From Git (Latest Features)](#approach-2-from-git-latest-features)
+- [Integration Options](#integration-options)
+  - [Option A: Standalone Server (Recommended)](#option-a-standalone-server-recommended)
+  - [Option B: Express Middleware](#option-b-express-middleware)
 - [Choosing a Provider](#choosing-a-provider)
-- [Production Deployment](#production-deployment)
+- [Keeping It Running on a Server](#keeping-it-running-on-a-server)
+  - [Option 1: PM2 (Easiest)](#option-1-pm2-easiest)
+  - [Option 2: systemd (Native Linux)](#option-2-systemd-native-linux)
+  - [Option 3: Docker](#option-3-docker)
+- [Nginx Reverse Proxy](#nginx-reverse-proxy)
 - [Security Checklist](#security-checklist)
 - [Troubleshooting](#troubleshooting)
 
 ---
 
-## Option A: Standalone Server (Recommended)
+## Prerequisites
 
-Run the chatbot as a separate service alongside your existing app. No code changes to your project needed.
+- **Node.js 18+** (`node --version`)
+- **PostgreSQL** running and accessible
+- **Git** (only needed for Approach 2)
 
-### Step 1: Install
+```bash
+# Verify
+node --version        # must be v18+
+psql "$DATABASE_URL" -c "SELECT 1"   # database is reachable
+```
+
+---
+
+## Installation
+
+### Approach 1: npm / npx (Simplest)
+
+The easiest way. No cloning, no building. Works once the package is published to npm.
+
+**Install globally:**
 
 ```bash
 npm install -g sql-chatbot-agent
 ```
 
-Or use `npx` without installing (shown below).
-
-### Step 2: Get an API Key
-
-Pick a provider and get a key:
-
-| Provider | Get Key At | Free? |
-|----------|-----------|-------|
-| **OpenRouter** | https://openrouter.ai/keys | Yes (50 req/day, 1000/day with $10 credit) |
-| **Groq** | https://console.groq.com | Yes (100K tokens/day) |
-| **Ollama** | https://ollama.com (install locally) | Yes (unlimited, runs on your machine) |
-| **OpenAI** | https://platform.openai.com | No (pay-per-use) |
-
-### Step 3: Set Environment Variables
+**Or run directly with npx (no install):**
 
 ```bash
-# Required
-export DATABASE_URL="postgresql://user:password@your-db-host:5432/your_database"
+npx sql-chatbot-agent --db "$DATABASE_URL" --code ./src
+```
 
-# Pick ONE of these depending on your provider:
-export OPENROUTER_API_KEY="sk-or-v1-xxx"   # OpenRouter
+**Or use the init wizard:**
+
+```bash
+# Creates a chatbot.config.json in the current directory
+npx sql-chatbot-agent init
+
+# Edit chatbot.config.json with your database URL and API key, then:
+npx sql-chatbot-agent
+```
+
+The `chatbot.config.json` looks like:
+
+```json
+{
+  "databaseUrl": "postgresql://user:password@localhost:5432/your_database",
+  "provider": "openrouter",
+  "llmApiKey": "",
+  "codePaths": ["./src"],
+  "port": 3456,
+  "secret": ""
+}
+```
+
+**Quick one-liners with different providers:**
+
+```bash
+# OpenRouter (free, default)
+npx sql-chatbot-agent --db postgresql://localhost/mydb --key sk-or-v1-xxx --code ./src
+
+# Groq (free, fast)
+npx sql-chatbot-agent --db postgresql://localhost/mydb --provider groq --key gsk_xxx --code ./src
+
+# OpenAI (paid, best quality)
+npx sql-chatbot-agent --db postgresql://localhost/mydb --provider openai --key sk-xxx --model gpt-4o-mini --code ./src
+
+# Ollama (free, local, no key)
+npx sql-chatbot-agent --db postgresql://localhost/mydb --provider ollama --code ./src
+```
+
+> **When to use this:** After the npm package is published with the latest version. Check with `npm view sql-chatbot-agent version`.
+
+---
+
+### Approach 2: From Git (Latest Features)
+
+Use this to get the latest unreleased features from the `v1-development` branch.
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/bhumit4220/sql-chatbot.git
+cd sql-chatbot
+
+# 2. Checkout the development branch
+git checkout v1-development
+
+# 3. Install dependencies
+npm install
+
+# 4. Build the agent
+cd packages/agent
+npm run build
+```
+
+After this, the CLI entry point is at `packages/agent/dist/cli.js`.
+
+**Run it:**
+
+```bash
+node dist/cli.js --db "$DATABASE_URL" --code /path/to/your/project/src
+```
+
+> **When to use this:** When you need the latest features not yet on npm, or want to contribute/customize.
+
+---
+
+## Integration Options
+
+### Option A: Standalone Server (Recommended)
+
+Run the chatbot as a separate process alongside your existing app. No code changes needed.
+
+#### Step 1: Get an API Key
+
+| Provider | Free? | Get Key At |
+|----------|-------|-----------|
+| **OpenRouter** (recommended) | Yes (50 req/day, 1000/day with $10 credit) | https://openrouter.ai/keys |
+| **Groq** | Yes (100K tokens/day) | https://console.groq.com |
+| **OpenAI** | No (pay-per-use) | https://platform.openai.com |
+| **Ollama** | Yes (unlimited, local) | https://ollama.com |
+
+#### Step 2: Set Environment Variables
+
+```bash
+# Required -- your PostgreSQL connection
+export DATABASE_URL="postgresql://user:password@localhost:5432/your_database"
+
+# Pick ONE provider key:
+export OPENROUTER_API_KEY="sk-or-v1-xxx"    # OpenRouter
 # OR
 export LLM_API_KEY="gsk_xxx"               # Groq
 # OR
 export LLM_API_KEY="sk-xxx"                # OpenAI
+# (Ollama needs no key)
 
-# Recommended for production
+# Recommended for production -- protects the API
 export CHATBOT_SECRET="a-long-random-string-here"
 ```
 
-### Step 4: Start the Server
+#### Step 3: Start the Server
+
+**If installed via npm:**
 
 ```bash
-# OpenRouter (default)
+# OpenRouter (default, free)
 npx sql-chatbot-agent --db "$DATABASE_URL" --code /path/to/your/project/src
 
 # Groq
 npx sql-chatbot-agent --db "$DATABASE_URL" --provider groq --code /path/to/your/project/src
 
-# Ollama (local)
+# OpenAI (gpt-4o-mini)
+npx sql-chatbot-agent --db "$DATABASE_URL" --provider openai --model gpt-4o-mini --code /path/to/your/project/src
+
+# Ollama (local, no key needed)
 npx sql-chatbot-agent --db "$DATABASE_URL" --provider ollama --code /path/to/your/project/src
 
-# Custom port
-npx sql-chatbot-agent --db "$DATABASE_URL" --code ./src --port 4000
+# Custom port + auth
+npx sql-chatbot-agent --db "$DATABASE_URL" --code ./src --port 4000 --secret "$CHATBOT_SECRET"
+```
+
+**If installed from git:**
+
+```bash
+cd /path/to/sql-chatbot/packages/agent
+
+# OpenRouter (default, free)
+node dist/cli.js --db "$DATABASE_URL" --code /path/to/your/project/src
+
+# Groq
+node dist/cli.js --db "$DATABASE_URL" --provider groq --code /path/to/your/project/src
+
+# OpenAI (gpt-4o-mini)
+node dist/cli.js --db "$DATABASE_URL" --provider openai --model gpt-4o-mini --code /path/to/your/project/src
+
+# Ollama (local, no key needed)
+node dist/cli.js --db "$DATABASE_URL" --provider ollama --code /path/to/your/project/src
+
+# Custom port + auth
+node dist/cli.js --db "$DATABASE_URL" --code ./src --port 4000 --secret "$CHATBOT_SECRET"
 ```
 
 You should see:
@@ -79,31 +216,30 @@ SQL Chatbot Agent running at http://localhost:3456
   Auth: enabled
 ```
 
-### Step 5: Add Widget to Your Frontend
+#### Step 4: Add Widget to Your Frontend
 
-Add this single script tag to your HTML (e.g., in your layout/index file):
+Add one script tag to your HTML, before `</body>`:
 
 ```html
-<!-- Before </body> tag -->
 <script src="http://your-server-ip:3456/chatbot/widget.js"></script>
 ```
 
-If your chatbot is on the same domain behind a reverse proxy:
+If behind a reverse proxy on the same domain:
 
 ```html
 <script src="/chatbot/widget.js"></script>
 ```
 
-A chat bubble will appear in the bottom-right corner of your page. That's it.
+A chat bubble appears in the bottom-right corner. That's it.
 
-### Step 6: Verify
+#### Step 5: Verify
 
 ```bash
-# Check health
+# Health check
 curl http://localhost:3456/chatbot/api/health
 # Returns: {"status":"ok","tables":25,"codeFiles":150}
 
-# Test a question (without auth)
+# Test a question (no auth)
 curl -N http://localhost:3456/chatbot/api/ask \
   -H "Content-Type: application/json" \
   -d '{"question":"How many users are there?"}'
@@ -111,23 +247,29 @@ curl -N http://localhost:3456/chatbot/api/ask \
 # Test with auth (if secret is set)
 curl -N http://localhost:3456/chatbot/api/ask \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-secret-token" \
+  -H "Authorization: Bearer your-secret-here" \
   -d '{"question":"How many users are there?"}'
 ```
 
 ---
 
-## Option B: Express Middleware
+### Option B: Express Middleware
 
 Embed the chatbot directly into your existing Express/Node.js app.
 
-### Step 1: Install
+#### Step 1: Install as a Local Dependency
 
 ```bash
+cd your-project
+
+# Via npm (once published):
 npm install sql-chatbot-agent
+
+# Or from local git clone:
+npm install /path/to/sql-chatbot/packages/agent
 ```
 
-### Step 2: Add to Your App
+#### Step 2: Add to Your App
 
 ```javascript
 const express = require('express');
@@ -141,7 +283,7 @@ app.use('/chatbot', sqlChatbot({
   provider: 'openrouter',                    // or 'groq', 'ollama', 'openai'
   llmApiKey: process.env.OPENROUTER_API_KEY,  // or LLM_API_KEY
   codePaths: ['./app', './src'],              // directories with your source code
-  secret: process.env.CHATBOT_SECRET,         // optional, recommended for production
+  secret: process.env.CHATBOT_SECRET,         // optional, recommended
 }));
 
 // Your other routes...
@@ -150,13 +292,13 @@ app.get('/', (req, res) => res.send('My App'));
 app.listen(3000);
 ```
 
-### Step 3: Add Widget to Your HTML
+#### Step 3: Add Widget to Your HTML
 
 ```html
 <script src="/chatbot/widget.js"></script>
 ```
 
-### Endpoints Created
+#### Endpoints Created
 
 | Path | Description |
 |------|-------------|
@@ -171,75 +313,121 @@ app.listen(3000);
 
 ### OpenRouter (Recommended for Getting Started)
 
-- **Cost:** Free (50 requests/day). Add $10 credit for 1000/day. Credit is NOT consumed by free models.
-- **Quality:** Routes across multiple free models automatically
-- **Setup:** Get key at https://openrouter.ai/keys
+- **Cost:** Free (50 req/day). Add $10 credit for 1000/day -- credit is NOT consumed by free models.
+- **Quality:** Routes across multiple free models automatically. Best with `meta-llama/llama-3.3-70b-instruct`.
 - **Env var:** `OPENROUTER_API_KEY`
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-v1-xxx
-npx sql-chatbot-agent --db "$DATABASE_URL" --code ./src
+node dist/cli.js --db "$DATABASE_URL" --code ./src
 ```
 
 ### Groq (Best Free Quality)
 
 - **Cost:** Free (100K tokens/day, ~30-50 chatbot questions)
-- **Quality:** High -- uses Llama 3.3 70B
-- **Setup:** Get key at https://console.groq.com
+- **Quality:** High -- uses Llama 3.3 70B with fast inference
 - **Env var:** `LLM_API_KEY` or `GROQ_API_KEY`
 
 ```bash
 export LLM_API_KEY=gsk_xxx
-npx sql-chatbot-agent --db "$DATABASE_URL" --provider groq --code ./src
+node dist/cli.js --db "$DATABASE_URL" --provider groq --code ./src
+```
+
+### OpenAI (Best Quality, Paid)
+
+- **Cost:** ~$0.15 per 1M input tokens, ~$0.60 per 1M output tokens (gpt-4o-mini)
+- **Quality:** Highest -- best SQL generation accuracy
+- **Env var:** `LLM_API_KEY`
+
+```bash
+export LLM_API_KEY=sk-xxx
+node dist/cli.js --db "$DATABASE_URL" --provider openai --model gpt-4o-mini --code ./src
 ```
 
 ### Ollama (Best for Production / Unlimited)
 
 - **Cost:** Free, unlimited (uses your server's GPU/CPU)
 - **Quality:** Depends on model and hardware
-- **Setup:** Install Ollama, pull a model
+- **Setup:** Install Ollama first
 
 ```bash
-# On your server
+# Install Ollama on your server
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull llama3.1:8b
 ollama serve
 
-# Then run chatbot
-npx sql-chatbot-agent --db "$DATABASE_URL" --provider ollama --code ./src
-```
-
-### OpenAI (Best Quality, Paid)
-
-- **Cost:** ~$0.15 per 1M input tokens, ~$0.60 per 1M output tokens (gpt-4o-mini)
-- **Quality:** Highest
-- **Env var:** `LLM_API_KEY`
-
-```bash
-export LLM_API_KEY=sk-xxx
-npx sql-chatbot-agent --db "$DATABASE_URL" --provider openai --code ./src
+# Then run chatbot (no key needed)
+node dist/cli.js --db "$DATABASE_URL" --provider ollama --code ./src
 ```
 
 ---
 
-## Production Deployment
+## Keeping It Running on a Server
 
-### Using PM2 (Process Manager)
+Running `node dist/cli.js` directly will stop when you close your terminal. Use one of these approaches to keep it running 24/7.
+
+### Option 1: PM2 (Easiest)
+
+PM2 is a Node.js process manager. Easiest to set up, good for most cases.
 
 ```bash
+# Install PM2 globally (once)
 npm install -g pm2
-
-# Start
-pm2 start "npx sql-chatbot-agent --db $DATABASE_URL --code ./src --secret $CHATBOT_SECRET" --name chatbot
-
-# Auto-restart on crash + persist across reboots
-pm2 save
-pm2 startup
 ```
 
-### Using systemd
+**Start the chatbot:**
 
-Create `/etc/systemd/system/sql-chatbot.service`:
+```bash
+# If installed via npm:
+pm2 start "npx sql-chatbot-agent --db $DATABASE_URL --code /path/to/your/project/src --secret $CHATBOT_SECRET" --name chatbot
+
+# If installed from git:
+pm2 start /path/to/sql-chatbot/packages/agent/dist/cli.js \
+  --name chatbot \
+  -- --db "$DATABASE_URL" --code /path/to/your/project/src --secret "$CHATBOT_SECRET"
+```
+
+**Make it survive reboots:**
+
+```bash
+pm2 save          # saves current process list
+pm2 startup       # generates startup script (follow the command it prints)
+```
+
+**Useful PM2 commands:**
+
+```bash
+pm2 status              # see all running processes
+pm2 logs chatbot        # view chatbot logs (live tail)
+pm2 logs chatbot --lines 100   # last 100 lines
+pm2 restart chatbot     # restart the chatbot
+pm2 stop chatbot        # stop it
+pm2 delete chatbot      # remove from PM2
+pm2 monit               # real-time CPU/memory dashboard
+```
+
+**Update after a git pull:**
+
+```bash
+cd /path/to/sql-chatbot/packages/agent
+git pull origin v1-development
+npm run build
+pm2 restart chatbot
+```
+
+---
+
+### Option 2: systemd (Native Linux)
+
+No extra installs needed -- built into every Linux server. More "proper" for production.
+
+**Create the service file:**
+
+```bash
+sudo nano /etc/systemd/system/sql-chatbot.service
+```
+
+Paste this (edit the paths and credentials):
 
 ```ini
 [Unit]
@@ -248,61 +436,179 @@ After=network.target postgresql.service
 
 [Service]
 Type=simple
-User=your-user
-WorkingDirectory=/path/to/your/project
-Environment=DATABASE_URL=postgresql://user:pass@localhost:5432/mydb
+User=your-username
+WorkingDirectory=/path/to/sql-chatbot/packages/agent
+
+# Environment variables
+Environment=DATABASE_URL=postgresql://user:password@localhost:5432/your_database
 Environment=OPENROUTER_API_KEY=sk-or-v1-xxx
 Environment=CHATBOT_SECRET=your-secret-here
-ExecStart=/usr/bin/npx sql-chatbot-agent --code ./src
+
+# The command to run
+# If installed via npm:
+#   ExecStart=/usr/bin/npx sql-chatbot-agent --db postgresql://user:password@localhost:5432/your_database --code /path/to/your/project/src --secret your-secret-here
+# If installed from git:
+ExecStart=/usr/bin/node dist/cli.js --db postgresql://user:password@localhost:5432/your_database --code /path/to/your/project/src --secret your-secret-here
+
+# Auto-restart on crash
 Restart=always
 RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
 ```
 
+**Enable and start:**
+
 ```bash
+# Reload systemd (after creating/editing the service file)
+sudo systemctl daemon-reload
+
+# Enable (start on boot)
 sudo systemctl enable sql-chatbot
+
+# Start now
 sudo systemctl start sql-chatbot
-sudo journalctl -u sql-chatbot -f  # view logs
+
+# Check status
+sudo systemctl status sql-chatbot
 ```
 
-### Using Docker
+**Useful systemd commands:**
+
+```bash
+sudo systemctl status sql-chatbot       # is it running?
+sudo systemctl restart sql-chatbot      # restart
+sudo systemctl stop sql-chatbot         # stop
+sudo journalctl -u sql-chatbot -f       # view logs (live tail)
+sudo journalctl -u sql-chatbot --since "1 hour ago"   # recent logs
+```
+
+**Update after a git pull:**
+
+```bash
+cd /path/to/sql-chatbot/packages/agent
+git pull origin v1-development
+npm run build
+sudo systemctl restart sql-chatbot
+```
+
+---
+
+### Option 3: Docker
+
+Best for isolated, reproducible deployments.
+
+**Dockerfile (npm approach — use once published):**
 
 ```dockerfile
 FROM node:20-slim
 RUN npm install -g sql-chatbot-agent
 WORKDIR /app
 COPY ./src ./src
+EXPOSE 3456
 CMD ["sql-chatbot-agent", "--code", "./src"]
 ```
 
+**Dockerfile (git approach — use for latest features):**
+
+```dockerfile
+FROM node:20-slim
+
+# Clone and build the chatbot
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+RUN git clone https://github.com/bhumit4220/sql-chatbot.git /opt/sql-chatbot
+WORKDIR /opt/sql-chatbot
+RUN git checkout v1-development
+RUN npm install
+WORKDIR /opt/sql-chatbot/packages/agent
+RUN npm run build
+
+# Copy your source code for route detection
+WORKDIR /app
+COPY ./src ./src
+
+EXPOSE 3456
+
+CMD ["node", "/opt/sql-chatbot/packages/agent/dist/cli.js", "--code", "./src"]
+```
+
+**Build and run:**
+
 ```bash
+docker build -t sql-chatbot .
+
 docker run -d \
-  -e DATABASE_URL="postgresql://user:pass@host:5432/db" \
+  --name chatbot \
+  --restart always \
+  -e DATABASE_URL="postgresql://user:pass@host.docker.internal:5432/mydb" \
   -e OPENROUTER_API_KEY="sk-or-v1-xxx" \
   -e CHATBOT_SECRET="your-secret" \
   -p 3456:3456 \
-  your-chatbot-image
+  sql-chatbot
 ```
 
-### Nginx Reverse Proxy
+**With docker-compose:**
 
-To serve the chatbot on the same domain as your app:
+```yaml
+# docker-compose.yml
+services:
+  chatbot:
+    build: .
+    restart: always
+    ports:
+      - "3456:3456"
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/mydb
+      - OPENROUTER_API_KEY=sk-or-v1-xxx
+      - CHATBOT_SECRET=your-secret
+    depends_on:
+      - db
+```
+
+**Useful Docker commands:**
+
+```bash
+docker logs chatbot -f          # view logs
+docker restart chatbot          # restart
+docker stop chatbot             # stop
+docker rm chatbot               # remove container
+```
+
+---
+
+## Nginx Reverse Proxy
+
+Serve the chatbot on the same domain as your app (recommended for production).
+
+Add this to your Nginx server block:
 
 ```nginx
-# In your nginx server block
 location /chatbot/ {
     proxy_pass http://127.0.0.1:3456/chatbot/;
     proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header Connection '';
-    proxy_buffering off;           # Required for SSE streaming
+    proxy_buffering off;           # REQUIRED for SSE streaming
     proxy_cache off;
     proxy_read_timeout 300s;       # LLM responses can be slow
 }
 ```
 
-Then your widget tag becomes:
+Then reload Nginx:
+
+```bash
+sudo nginx -t              # test config
+sudo systemctl reload nginx
+```
+
+Your widget tag becomes:
 
 ```html
 <script src="/chatbot/widget.js"></script>
@@ -312,12 +618,12 @@ Then your widget tag becomes:
 
 ## Security Checklist
 
-- [ ] **Set a secret token** -- `--secret` or `CHATBOT_SECRET` env var. Without it, anyone can query your database.
+- [ ] **Set a secret token** -- `--secret` flag or `CHATBOT_SECRET` env var. Without it, anyone can query your database.
 - [ ] **Never hardcode API keys** in source code. Always use environment variables.
-- [ ] **Add `chatbot.config.json` to `.gitignore`** -- the `init` command does this automatically.
-- [ ] **Use HTTPS** in production (via reverse proxy like Nginx/Caddy).
-- [ ] **SQL is read-only** -- all queries run inside `SET TRANSACTION READ ONLY`. Destructive keywords (`DROP`, `DELETE`, etc.) are blocked.
+- [ ] **Use HTTPS** in production (via Nginx/Caddy with Let's Encrypt).
+- [ ] **SQL is read-only** -- all queries run inside `SET TRANSACTION READ ONLY`. Destructive keywords (`DROP`, `DELETE`, etc.) are blocked at the application level.
 - [ ] **Sensitive columns are hidden** -- columns matching patterns like `password`, `secret`, `api_key`, `ssn` are automatically excluded from the schema sent to the LLM.
+- [ ] **Restrict network access** -- if the chatbot only needs to be reached from your frontend, don't expose port 3456 publicly. Use Nginx reverse proxy instead.
 
 ---
 
@@ -328,49 +634,76 @@ Then your widget tag becomes:
 You need to provide an API key. Set one of:
 - `OPENROUTER_API_KEY` (get free at https://openrouter.ai/keys)
 - `LLM_API_KEY` or `GROQ_API_KEY`
+- Use `--key sk-xxx` flag directly
 - Or use `--provider ollama` (no key needed, but requires Ollama running locally)
 
-### "429 Rate limit exceeded: free-models-per-day"
+### "429 Rate limit exceeded"
 
-OpenRouter free tier is 50 requests/day without credits. Each chatbot question uses 2-3 API calls (classify + SQL + answer), so that's ~16-25 questions/day.
+OpenRouter free tier is 50 requests/day without credits. Each chatbot question uses 2-3 API calls, so ~16-25 questions/day.
 
 **Options:**
 - Add $10 credit at https://openrouter.ai/settings/credits (unlocks 1000/day, credit NOT consumed by free models)
-- Switch to Groq: `--provider groq --key gsk_xxx`
+- Switch to Groq: `--provider groq`
 - Use Ollama locally: `--provider ollama` (unlimited)
 
-### "Error: Ollama is not running"
+### "ECONNREFUSED" or database connection errors
 
-```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Pull a model and start
-ollama pull llama3.1:8b
-ollama serve
-```
+- Verify your DATABASE_URL is correct
+- Check PostgreSQL is running: `sudo systemctl status postgresql`
+- If using Docker, use `host.docker.internal` instead of `localhost`
 
 ### Widget not appearing
 
-1. Check the script tag URL is correct and reachable
+1. Check the script tag URL is correct and reachable from the browser
 2. Open browser DevTools > Console for errors
 3. Check the health endpoint: `curl http://your-server:3456/chatbot/api/health`
+4. If behind Nginx, make sure `proxy_buffering off` is set
 
 ### Widget shows "..." and never responds
 
-1. Check server logs for errors
+1. Check server logs (`pm2 logs chatbot` or `journalctl -u sql-chatbot -f`)
 2. Test the API directly: `curl -N http://localhost:3456/chatbot/api/ask -H "Content-Type: application/json" -d '{"question":"hello"}'`
-3. If you see 429 errors, you've hit the rate limit (see above)
-4. If you see 401 errors, your secret token isn't matching
+3. If 429 errors: rate limit (see above)
+4. If 401 errors: secret token mismatch
 
 ### "EADDRINUSE: address already in use"
 
-Another process is using the port. Either kill it or use a different port:
+Another process is using the port:
 
 ```bash
 # Find what's using port 3456
 lsof -ti:3456
 
-# Use a different port
-npx sql-chatbot-agent --port 4000
+# Kill it
+kill $(lsof -ti:3456)
+
+# Or use a different port
+node dist/cli.js --port 4000
+```
+
+### Updating to a new version
+
+**If installed via npm:**
+
+```bash
+npm install -g sql-chatbot-agent@latest
+
+# Then restart:
+pm2 restart chatbot                     # if using PM2
+sudo systemctl restart sql-chatbot      # if using systemd
+docker rebuild & restart                # if using Docker
+```
+
+**If installed from git:**
+
+```bash
+cd /path/to/sql-chatbot
+git pull origin v1-development
+cd packages/agent
+npm run build
+
+# Then restart:
+pm2 restart chatbot                     # if using PM2
+sudo systemctl restart sql-chatbot      # if using systemd
+docker restart chatbot                  # if using Docker
 ```
