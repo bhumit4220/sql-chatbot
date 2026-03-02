@@ -346,4 +346,443 @@ router.post('/api/users', handler);
 
     expect(summary).toBe('No routes detected.');
   });
+
+  // --- New framework tests ---
+
+  it('indexes .php, .java, .go, .cs, .ex, .exs, .svelte files', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'app.php', '<?php echo "hello"; ?>');
+    writeFile(dir, 'App.java', 'class App {}');
+    writeFile(dir, 'main.go', 'package main');
+    writeFile(dir, 'Program.cs', 'class Program {}');
+    writeFile(dir, 'router.ex', 'defmodule Router do end');
+    writeFile(dir, 'helper.exs', 'IO.puts "hello"');
+    writeFile(dir, 'Page.svelte', '<h1>Hello</h1>');
+
+    await indexer.index([dir]);
+
+    expect(indexer.fileCount()).toBe(7);
+  });
+
+  it('skips .svelte-kit, .nuxt, target, bin, obj, deps, _build directories', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'src/app.ts', 'good file');
+    writeFile(dir, '.svelte-kit/output.js', 'skip');
+    writeFile(dir, '.nuxt/app.js', 'skip');
+    writeFile(dir, 'target/classes/App.java', 'skip');
+    writeFile(dir, 'bin/Debug/App.cs', 'skip');
+    writeFile(dir, 'obj/Debug/App.cs', 'skip');
+    writeFile(dir, 'deps/phoenix/lib.ex', 'skip');
+    writeFile(dir, '_build/dev/lib.ex', 'skip');
+
+    await indexer.index([dir]);
+
+    expect(indexer.fileCount()).toBe(1);
+  });
+
+  it('detects Fastify routes (server.get, fastify.post)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'src/routes.ts', `
+server.get('/health', async (req, reply) => { return { ok: true }; });
+fastify.post('/users', async (req, reply) => { return {}; });
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/health' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'POST', path: '/users' }));
+  });
+
+  it('detects Gin routes (r.GET, r.POST)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'main.go', `
+package main
+
+import "github.com/gin-gonic/gin"
+
+func main() {
+    r := gin.Default()
+    r.GET("/ping", func(c *gin.Context) {})
+    r.POST("/users", func(c *gin.Context) {})
+    r.DELETE("/users/:id", func(c *gin.Context) {})
+}
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/ping' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'POST', path: '/users' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'DELETE', path: '/users/:id' }));
+  });
+
+  it('detects Echo routes (e.GET, e.Post)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'server.go', `
+package main
+
+func main() {
+    e := echo.New()
+    e.GET("/users", getUsers)
+    e.Post("/users", createUser)
+}
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/users' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'POST', path: '/users' }));
+  });
+
+  it('detects SvelteKit file-based routes (+page.svelte, +server.ts)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'src/routes/+page.svelte', '<h1>Home</h1>');
+    writeFile(dir, 'src/routes/about/+page.svelte', '<h1>About</h1>');
+    writeFile(dir, 'src/routes/users/[id]/+page.svelte', '<h1>User</h1>');
+    writeFile(dir, 'src/routes/api/health/+server.ts', 'export function GET() {}');
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/about' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/users/:id' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'ALL', path: '/api/health' }));
+  });
+
+  it('detects Nuxt 3 file-based routes (pages/ with [id])', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'pages/index.vue', '<template><h1>Home</h1></template>');
+    writeFile(dir, 'pages/about.vue', '<template><h1>About</h1></template>');
+    writeFile(dir, 'pages/users/[id].vue', '<template><h1>User</h1></template>');
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/about' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/users/:id' }));
+  });
+
+  it('detects Nuxt 2 file-based routes (pages/ with _id)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'pages/users/_id.vue', '<template><h1>User</h1></template>');
+    writeFile(dir, 'pages/posts/_slug.vue', '<template><h1>Post</h1></template>');
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/users/:id' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/posts/:slug' }));
+  });
+
+  it('detects Django routes (path, re_path, url)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'myapp/urls.py', `
+from django.urls import path, re_path
+
+urlpatterns = [
+    path('', views.index),
+    path('users/', views.users_list),
+    path('users/<int:pk>/', views.user_detail),
+    re_path('^articles/(?P<slug>[\\w-]+)/$', views.article),
+]
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'ALL', path: '/' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'ALL', path: '/users/' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'ALL', path: '/users/<int:pk>/' }));
+  });
+
+  it('detects Laravel routes (Route::get, Route::resource)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'routes/web.php', `
+<?php
+
+Route::get('/dashboard', [DashboardController::class, 'index']);
+Route::post('/login', [AuthController::class, 'login']);
+Route::resource('photos', PhotoController::class);
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/dashboard' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'POST', path: '/login' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/photos' }));
+  });
+
+  it('detects ASP.NET minimal API routes (app.MapGet, app.MapPost)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'Program.cs', `
+var app = builder.Build();
+app.MapGet("/weatherforecast", () => { });
+app.MapPost("/users", (User user) => { });
+app.MapDelete("/users/{id}", (int id) => { });
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/weatherforecast' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'POST', path: '/users' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'DELETE', path: '/users/{id}' }));
+  });
+
+  it('detects ASP.NET attribute routes ([HttpGet], [Route])', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'Controllers/UsersController.cs', `
+[Route("api/users")]
+public class UsersController : ControllerBase
+{
+    [HttpGet("{id}")]
+    public ActionResult<User> Get(int id) { }
+
+    [HttpPost("create")]
+    public ActionResult Create(User user) { }
+}
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'ALL', path: 'api/users' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '{id}' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'POST', path: 'create' }));
+  });
+
+  it('detects Phoenix routes (get "/path", Controller, :action)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'lib/myapp_web/router.ex', `
+defmodule MyAppWeb.Router do
+  use MyAppWeb, :router
+
+  scope "/", MyAppWeb do
+    get "/", PageController, :index
+    post "/users", UserController, :create
+    delete "/users/:id", UserController, :delete
+  end
+end
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'POST', path: '/users' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'DELETE', path: '/users/:id' }));
+  });
+
+  it('detects NestJS routes (@Controller + @Get)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'src/users/users.controller.ts', `
+import { Controller, Get, Post } from '@nestjs/common';
+
+@Controller('users')
+export class UsersController {
+  @Get()
+  findAll() { return []; }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) { return {}; }
+
+  @Post('')
+  create(@Body() dto: CreateUserDto) { return {}; }
+}
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/users' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/users/:id' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'POST', path: '/users' }));
+  });
+
+  it('detects FastAPI routes (@app.get, @router.post)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'main.py', `
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/items")
+def read_items():
+    return []
+
+@app.post("/items")
+def create_item(item: Item):
+    return item
+
+@router.delete("/items/{item_id}")
+def delete_item(item_id: int):
+    pass
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/items' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'POST', path: '/items' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'DELETE', path: '/items/{item_id}' }));
+  });
+
+  it('detects Flask routes (@app.route with methods)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'app.py', `
+from flask import Flask
+
+app = Flask(__name__)
+
+@app.route('/hello')
+def hello():
+    return 'Hello!'
+
+@app.route('/users', methods=['GET', 'POST'])
+def users():
+    return []
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/hello' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/users' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'POST', path: '/users' }));
+  });
+
+  it('detects Spring Boot routes (@GetMapping + @RequestMapping prefix)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'UserController.java', `
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api")
+public class UserController {
+
+    @GetMapping("/users")
+    public List<User> getUsers() { return List.of(); }
+
+    @PostMapping("/users")
+    public User createUser(@RequestBody User user) { return user; }
+
+    @DeleteMapping("/users/{id}")
+    public void deleteUser(@PathVariable long id) { }
+}
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/api/users' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'POST', path: '/api/users' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'DELETE', path: '/api/users/{id}' }));
+  });
+
+  it('detects Sinatra routes (get "/path" do)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'app.rb', `
+require 'sinatra'
+
+get '/hello' do
+  'Hello World'
+end
+
+post '/users' do
+  'Created'
+end
+
+delete '/users/:id' do
+  'Deleted'
+end
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/hello' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'POST', path: '/users' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'DELETE', path: '/users/:id' }));
+  });
+
+  it('does not detect Sinatra routes in routes.rb files', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'config/routes.rb', `
+Rails.application.routes.draw do
+  get '/about', to: 'pages#about'
+end
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    // Should only detect via Rails detector, not Sinatra
+    const aboutRoutes = routes.filter(r => r.path === '/about');
+    expect(aboutRoutes).toHaveLength(1);
+    expect(aboutRoutes[0].method).toBe('GET');
+  });
+
+  it('detects Hono routes (app.get, app.post)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'src/index.ts', `
+import { Hono } from 'hono';
+const app = new Hono();
+
+app.get('/api/health', (c) => c.json({ ok: true }));
+app.post('/api/items', async (c) => { return c.json({}); });
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/api/health' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'POST', path: '/api/items' }));
+  });
+
+  it('detects Fiber routes (app.Get, app.Post)', async () => {
+    const dir = createTmpDir();
+
+    writeFile(dir, 'main.go', `
+package main
+
+import "github.com/gofiber/fiber/v2"
+
+func main() {
+    app := fiber.New()
+    app.Get("/api/users", getUsers)
+    app.Post("/api/users", createUser)
+}
+`);
+
+    await indexer.index([dir]);
+    const routes = indexer.getRoutes();
+
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'GET', path: '/api/users' }));
+    expect(routes).toContainEqual(expect.objectContaining({ method: 'POST', path: '/api/users' }));
+  });
 });
