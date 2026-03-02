@@ -149,4 +149,17 @@ describe('buildGenerateSqlMessages', () => {
     expect(systemContent).toContain('LOOKUP VALUES');
     expect(systemContent).toContain('VALUES: id=name');
   });
+
+  it('should include ENUM VALUES rule in system prompt', () => {
+    const messages = buildGenerateSqlMessages({
+      question: 'test',
+      schema: baseSchema,
+      history: [],
+    });
+
+    const systemContent = messages[0].content as string;
+    expect(systemContent).toContain('ENUM VALUES');
+    expect(systemContent).toContain('exact values (case-sensitive)');
+    expect(systemContent).toContain('Never guess enum values');
+  });
 });

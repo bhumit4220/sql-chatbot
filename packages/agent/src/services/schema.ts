@@ -46,6 +46,7 @@ interface ColumnInfo {
   table_name: string;
   column_name: string;
   data_type: string;
+  udt_name: string;
   is_nullable: string;
   column_default: string | null;
 }
@@ -65,14 +66,14 @@ export class SchemaService {
     const pool = new Pool({ connectionString: databaseUrl });
 
     try {
-      const [tablesRes, columnsRes, pksRes, fksRes] = await Promise.all([
+      const [tablesRes, columnsRes, pksRes, fksRes, enumsRes, checksRes] = await Promise.all([
         pool.query(
           `SELECT table_name FROM information_schema.tables
            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
            ORDER BY table_name`
         ),
         pool.query(
-          `SELECT table_name, column_name, data_type, is_nullable, column_default
+          `SELECT table_name, column_name, data_type, udt_name, is_nullable, column_default
            FROM information_schema.columns
            WHERE table_schema = 'public'
            ORDER BY table_name, ordinal_position`
@@ -100,6 +101,17 @@ export class SchemaService {
              AND tc.constraint_schema = ccu.constraint_schema
            WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'`
         ),
+        pool.query(
+          `SELECT t.typname AS enum_name, e.enumlabel AS enum_value
+           FROM pg_enum e
+           JOIN pg_type t ON e.enumtypid = t.oid
+           ORDER BY t.typname, e.enumsortorder`
+        ),
+        pool.query(
+          `SELECT conrelid::regclass AS table_name, pg_get_constraintdef(oid) AS check_def
+           FROM pg_constraint
+           WHERE contype = 'c' AND connamespace = 'public'::regnamespace`
+        ),
       ]);
 
       const tableNames: string[] = tablesRes.rows.map((r: { table_name: string }) => r.table_name);
@@ -113,6 +125,38 @@ export class SchemaService {
       const fkMap = new Map<string, string>(
         fksRes.rows.map((r: ForeignKey) => [`${r.from_table}.${r.from_column}`, `${r.to_table}.${r.to_column}`])
       );
+
+      // Index enum types: enum_name → ordered list of values
+      const enumMap = new Map<string, string[]>();
+      for (const row of enumsRes.rows as { enum_name: string; enum_value: string }[]) {
+        if (!enumMap.has(row.enum_name)) {
+          enumMap.set(row.enum_name, []);
+        }
+        enumMap.get(row.enum_name)!.push(row.enum_value);
+      }
+
+      // Parse check constraints for IN (...) or ANY(ARRAY[...]) patterns → "table.column" → values[]
+      const checkEnumMap = new Map<string, string[]>();
+      for (const row of checksRes.rows as { table_name: string; check_def: string }[]) {
+        // Format 1: ((col)::text = ANY ((ARRAY['a'::varchar, 'b'::varchar])::text[]))
+        // Format 2: (col IN ('a', 'b', 'c'))
+        const match = row.check_def.match(
+          /\(\((\w+)\)::\w+\s*=\s*ANY\s*\(\(?ARRAY\[([^\]]+)\]/i
+        ) || row.check_def.match(
+          /\((\w+)\s+IN\s*\(([^)]+)\)/i
+        );
+        if (!match) continue;
+        const colName = match[1];
+        const valuesStr = match[2];
+        if (!valuesStr) continue;
+        const values = valuesStr
+          .split(',')
+          .map(v => v.trim().replace(/^'([^']*)'(?:::\w+.*)?$/, '$1').trim())
+          .filter(v => v.length > 0);
+        if (values.length > 0) {
+          checkEnumMap.set(`${row.table_name}.${colName}`, values);
+        }
+      }
 
       // Group columns by table
       const columnsByTable = new Map<string, ColumnInfo[]>();
@@ -171,7 +215,12 @@ export class SchemaService {
           if (isSensitive(col.column_name)) continue;
 
           const key = `${table}.${col.column_name}`;
-          const mappedType = mapType(col.data_type);
+          const enumValues = (col.data_type === 'USER-DEFINED' && col.udt_name
+            ? enumMap.get(col.udt_name) : undefined)
+            || checkEnumMap.get(key);
+          const mappedType = enumValues
+            ? `ENUM(${enumValues.join(',')})`
+            : mapType(col.data_type);
           let part = `${col.column_name} ${mappedType}`;
 
           if (pkSet.has(key)) part += ' PK';
@@ -183,6 +232,11 @@ export class SchemaService {
           // Soft delete detection
           if (SOFT_DELETE_COLUMNS.has(col.column_name)) {
             annotations.push(`  -- SOFT DELETE: filter ${col.column_name} IS NULL for active records`);
+          }
+
+          // Enum value annotation
+          if (enumValues) {
+            annotations.push(`  -- ENUM: ${col.column_name} values: ${enumValues.join(', ')}`);
           }
         }
 

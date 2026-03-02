@@ -59,6 +59,8 @@ function setupMockQuery(
     foreignKeys?: typeof foreignKeysResult;
     rowCounts?: { rows: { relname: string; n_live_tup: string }[] };
     lookupValues?: Record<string, { rows: Record<string, unknown>[] }>;
+    enums?: { rows: { enum_name: string; enum_value: string }[] };
+    checkConstraints?: { rows: { table_name: string; check_def: string }[] };
   } = {}
 ) {
   const tables = overrides.tables ?? tablesResult;
@@ -67,12 +69,16 @@ function setupMockQuery(
   const fks = overrides.foreignKeys ?? foreignKeysResult;
   const rowCounts = overrides.rowCounts ?? { rows: [] };
   const lookupValues = overrides.lookupValues ?? {};
+  const enums = overrides.enums ?? { rows: [] };
+  const checks = overrides.checkConstraints ?? { rows: [] };
 
   mockQuery.mockImplementation((sql: string) => {
     if (sql.includes('information_schema.tables')) return Promise.resolve(tables);
     if (sql.includes('information_schema.columns')) return Promise.resolve(columns);
     if (sql.includes("'PRIMARY KEY'")) return Promise.resolve(pks);
     if (sql.includes("'FOREIGN KEY'")) return Promise.resolve(fks);
+    if (sql.includes('pg_enum')) return Promise.resolve(enums);
+    if (sql.includes('pg_constraint')) return Promise.resolve(checks);
     if (sql.includes('pg_stat_user_tables')) return Promise.resolve(rowCounts);
     // Match lookup value queries: SELECT pk, display FROM table_name ORDER BY pk LIMIT 50
     for (const [tableName, result] of Object.entries(lookupValues)) {
@@ -568,6 +574,203 @@ describe('SchemaService', () => {
 
       const summary = service.getSummary();
       expect(summary).not.toContain('VALUES');
+    });
+  });
+
+  describe('enum value introspection', () => {
+    it('annotates USER-DEFINED columns with enum values', async () => {
+      setupMockQuery({
+        tables: { rows: [{ table_name: 'challenges' }] },
+        columns: {
+          rows: [
+            { table_name: 'challenges', column_name: 'id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+            { table_name: 'challenges', column_name: 'name', data_type: 'character varying', udt_name: 'varchar', is_nullable: 'NO', column_default: null },
+            { table_name: 'challenges', column_name: 'status', data_type: 'USER-DEFINED', udt_name: 'challenges_status_enum', is_nullable: 'NO', column_default: null },
+          ],
+        },
+        primaryKeys: { rows: [{ table_name: 'challenges', column_name: 'id' }] },
+        foreignKeys: { rows: [] },
+        enums: {
+          rows: [
+            { enum_name: 'challenges_status_enum', enum_value: 'Draft' },
+            { enum_name: 'challenges_status_enum', enum_value: 'Active' },
+            { enum_name: 'challenges_status_enum', enum_value: 'Completed' },
+            { enum_name: 'challenges_status_enum', enum_value: 'Cancelled' },
+          ],
+        },
+      });
+
+      await service.discover('postgres://localhost:5432/testdb');
+
+      const summary = service.getSummary();
+      expect(summary).toContain('status ENUM(Draft,Active,Completed,Cancelled)');
+      expect(summary).toContain('-- ENUM: status values: Draft, Active, Completed, Cancelled');
+    });
+
+    it('handles multiple enum types across tables', async () => {
+      setupMockQuery({
+        tables: { rows: [
+          { table_name: 'challenges' },
+          { table_name: 'workouts' },
+        ] },
+        columns: {
+          rows: [
+            { table_name: 'challenges', column_name: 'id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+            { table_name: 'challenges', column_name: 'status', data_type: 'USER-DEFINED', udt_name: 'challenge_status', is_nullable: 'NO', column_default: null },
+            { table_name: 'workouts', column_name: 'id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+            { table_name: 'workouts', column_name: 'difficulty', data_type: 'USER-DEFINED', udt_name: 'difficulty_level', is_nullable: 'NO', column_default: null },
+          ],
+        },
+        primaryKeys: { rows: [
+          { table_name: 'challenges', column_name: 'id' },
+          { table_name: 'workouts', column_name: 'id' },
+        ] },
+        foreignKeys: { rows: [] },
+        enums: {
+          rows: [
+            { enum_name: 'challenge_status', enum_value: 'Active' },
+            { enum_name: 'challenge_status', enum_value: 'Inactive' },
+            { enum_name: 'difficulty_level', enum_value: 'Easy' },
+            { enum_name: 'difficulty_level', enum_value: 'Medium' },
+            { enum_name: 'difficulty_level', enum_value: 'Hard' },
+          ],
+        },
+      });
+
+      await service.discover('postgres://localhost:5432/testdb');
+
+      const summary = service.getSummary();
+      expect(summary).toContain('status ENUM(Active,Inactive)');
+      expect(summary).toContain('-- ENUM: status values: Active, Inactive');
+      expect(summary).toContain('difficulty ENUM(Easy,Medium,Hard)');
+      expect(summary).toContain('-- ENUM: difficulty values: Easy, Medium, Hard');
+    });
+
+    it('does NOT annotate USER-DEFINED columns without matching enum', async () => {
+      setupMockQuery({
+        tables: { rows: [{ table_name: 'geo' }] },
+        columns: {
+          rows: [
+            { table_name: 'geo', column_name: 'id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+            { table_name: 'geo', column_name: 'location', data_type: 'USER-DEFINED', udt_name: 'geometry', is_nullable: 'YES', column_default: null },
+          ],
+        },
+        primaryKeys: { rows: [{ table_name: 'geo', column_name: 'id' }] },
+        foreignKeys: { rows: [] },
+        enums: { rows: [] },
+      });
+
+      await service.discover('postgres://localhost:5432/testdb');
+
+      const summary = service.getSummary();
+      expect(summary).not.toContain('ENUM');
+      expect(summary).toContain('location USER-DEFINED');
+    });
+
+    it('tables without enum columns are unchanged', async () => {
+      setupMockQuery({
+        enums: {
+          rows: [
+            { enum_name: 'some_enum', enum_value: 'A' },
+            { enum_name: 'some_enum', enum_value: 'B' },
+          ],
+        },
+      });
+
+      await service.discover('postgres://localhost:5432/testdb');
+
+      const summary = service.getSummary();
+      expect(summary).not.toContain('ENUM');
+      expect(summary).toContain('TABLE customers');
+      expect(summary).toContain('TABLE jobs');
+    });
+
+    it('detects enum values from CHECK constraints (ANY ARRAY format)', async () => {
+      setupMockQuery({
+        tables: { rows: [{ table_name: 'orders' }] },
+        columns: {
+          rows: [
+            { table_name: 'orders', column_name: 'id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+            { table_name: 'orders', column_name: 'status', data_type: 'character varying', udt_name: 'varchar', is_nullable: 'NO', column_default: null },
+          ],
+        },
+        primaryKeys: { rows: [{ table_name: 'orders', column_name: 'id' }] },
+        foreignKeys: { rows: [] },
+        checkConstraints: {
+          rows: [
+            {
+              table_name: 'orders',
+              check_def: "CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'shipped'::character varying, 'delivered'::character varying])::text[])))",
+            },
+          ],
+        },
+      });
+
+      await service.discover('postgres://localhost:5432/testdb');
+
+      const summary = service.getSummary();
+      expect(summary).toContain('status ENUM(pending,shipped,delivered)');
+      expect(summary).toContain('-- ENUM: status values: pending, shipped, delivered');
+    });
+
+    it('detects enum values from CHECK constraints (IN format)', async () => {
+      setupMockQuery({
+        tables: { rows: [{ table_name: 'tasks' }] },
+        columns: {
+          rows: [
+            { table_name: 'tasks', column_name: 'id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+            { table_name: 'tasks', column_name: 'priority', data_type: 'character varying', udt_name: 'varchar', is_nullable: 'NO', column_default: null },
+          ],
+        },
+        primaryKeys: { rows: [{ table_name: 'tasks', column_name: 'id' }] },
+        foreignKeys: { rows: [] },
+        checkConstraints: {
+          rows: [
+            {
+              table_name: 'tasks',
+              check_def: "(priority IN ('low', 'medium', 'high', 'critical'))",
+            },
+          ],
+        },
+      });
+
+      await service.discover('postgres://localhost:5432/testdb');
+
+      const summary = service.getSummary();
+      expect(summary).toContain('priority ENUM(low,medium,high,critical)');
+      expect(summary).toContain('-- ENUM: priority values: low, medium, high, critical');
+    });
+
+    it('pg_enum takes priority over check constraint for same column', async () => {
+      setupMockQuery({
+        tables: { rows: [{ table_name: 'items' }] },
+        columns: {
+          rows: [
+            { table_name: 'items', column_name: 'id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+            { table_name: 'items', column_name: 'status', data_type: 'USER-DEFINED', udt_name: 'item_status', is_nullable: 'NO', column_default: null },
+          ],
+        },
+        primaryKeys: { rows: [{ table_name: 'items', column_name: 'id' }] },
+        foreignKeys: { rows: [] },
+        enums: {
+          rows: [
+            { enum_name: 'item_status', enum_value: 'Active' },
+            { enum_name: 'item_status', enum_value: 'Inactive' },
+          ],
+        },
+        checkConstraints: {
+          rows: [
+            { table_name: 'items', check_def: "(status IN ('active', 'inactive'))" },
+          ],
+        },
+      });
+
+      await service.discover('postgres://localhost:5432/testdb');
+
+      const summary = service.getSummary();
+      // pg_enum values (PascalCase) should win over check constraint values (lowercase)
+      expect(summary).toContain('ENUM(Active,Inactive)');
+      expect(summary).toContain('-- ENUM: status values: Active, Inactive');
     });
   });
 });

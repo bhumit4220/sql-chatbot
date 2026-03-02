@@ -28,6 +28,7 @@ RULES:
 14. SOFT DELETE: When a table has "-- SOFT DELETE" annotation, ALWAYS add WHERE deleted_at IS NULL to exclude deleted records, unless the user explicitly asks about deleted items
 15. POLYMORPHIC JOINS: When a table has "-- POLYMORPHIC: X_type + X_id", join using both: WHERE X_type = 'ModelName' AND X_id = target.id. The type value is the singular PascalCase of the target table name (e.g. titles → "Title", users → "User")
 16. LOOKUP VALUES: When a table has "-- VALUES: id=name" mappings, use these exact IDs in WHERE clauses. For example, if categories shows "1=TV Shows, 2=Movie" and the user asks about movies, use category_id = 2
+17. ENUM VALUES: When a column has "-- ENUM: column values: X, Y, Z" annotation, use ONLY these exact values (case-sensitive) in WHERE clauses. Never guess enum values.
 
 Respond with JSON only: {"sql": "<the SQL query>", "explanation": "<brief explanation of what the query does>"}`;
 
