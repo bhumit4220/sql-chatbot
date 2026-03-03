@@ -70,11 +70,48 @@ Created by `sql-chatbot-agent init`:
 | `llmApiKey` | string | API key for the LLM provider (not needed for OpenRouter or Ollama) |
 | `llmModel` | string | Model name override (default: provider-specific) |
 | `llmBaseUrl` | string | API base URL override (default: provider-specific) |
-| `codePaths` | string[] | Directories to index for code questions (default: `["./src"]`) |
+| `codePaths` | string[] | Directories to scan for route detection, enum discovery, and business logic context (default: `["./src"]`) |
 | `port` | number | Port for the standalone server (default: `3456`) |
 | `secret` | string | Secret token for authentication (optional, recommended for production) |
 
 > **Backward compat:** `groqApiKey` is still accepted and mapped to `llmApiKey` automatically.
+
+## Code Indexing
+
+The `codePaths` option (or `--code` CLI flag) controls which directories the chatbot scans for source code. This powers three features:
+
+1. **Route detection** — navigation and guidance answers (Express, Rails, Django, Next.js, etc.)
+2. **Enum & constant discovery** — model-level enums (Rails `enum`, Django `choices`, TypeORM decorators, etc.) are surfaced as context for accurate SQL generation
+3. **Business logic context** — validation rules, calculations, and domain logic help the LLM generate better queries
+
+### Framework-Specific Paths
+
+| Framework | Recommended `codePaths` |
+|-----------|------------------------|
+| Express / React / Next.js / Hono | `["./src"]` |
+| Rails | `["./app", "./config"]` |
+| Django | `["./myapp"]` (your app directories) |
+| Laravel | `["./app", "./routes"]` |
+| Flask / FastAPI | `["./app"]` or `["."]` |
+| Spring Boot (Java/Kotlin) | `["./src/main/java"]` or `["./src/main/kotlin"]` |
+| Go (Gin / Echo / Fiber) | `["./cmd", "./internal"]` |
+| Phoenix / Elixir | `["./lib"]` |
+| SvelteKit / Nuxt | `["./src"]` |
+| ASP.NET | `["./Controllers"]` |
+| Rust (Actix / Axum) | `["./src"]` |
+| Sinatra | `["."]` |
+
+**Tip:** When in doubt, point to your project root. The indexer automatically skips `node_modules`, `.git`, `dist`, `build`, `vendor`, `target`, `__pycache__`, etc.
+
+### Supported File Types
+
+`.js`, `.ts`, `.jsx`, `.tsx`, `.rb`, `.py`, `.erb`, `.vue`, `.php`, `.java`, `.go`, `.cs`, `.ex`, `.exs`, `.svelte`, `.kt`, `.rs`, `.dart`, `.scala`
+
+### Limits
+
+- Maximum 2000 files indexed (configurable)
+- Files are scanned on first request (lazy initialization)
+- Use `/chatbot/api/refresh` to re-index after code changes
 
 ### CLI Flags
 
@@ -85,7 +122,7 @@ Created by `sql-chatbot-agent init`:
 | `--key` | | API key for the LLM provider |
 | `--model` | | Model name override |
 | `--base-url` | | API base URL override |
-| `--code` | | Directory to index (single path) |
+| `--code` | | Directory to index (repeatable: `--code ./app --code ./config`) |
 | `--port` | `-p` | Port for the standalone server |
 | `--secret` | | Secret token for authentication |
 
@@ -342,11 +379,15 @@ data: {"type":"done"}
 
 ## Supported Frameworks
 
-The code indexer detects routes from:
-- Express.js (`app.get`, `router.post`, etc.)
-- React Router (`<Route path="...">`)
-- Next.js (pages/ and app/ directory conventions)
-- Rails (`resources`, `get`, `post` in routes.rb)
+The code indexer detects routes and patterns from 17+ frameworks:
+
+**JavaScript/TypeScript:** Express.js, Fastify, Hono, Koa, React Router, Next.js (pages + app router), NestJS, SvelteKit, Nuxt
+**Ruby:** Rails, Sinatra
+**Python:** Django, FastAPI, Flask
+**Java/Kotlin:** Spring Boot
+**Go:** Gin, Echo, Fiber
+**C#:** ASP.NET (minimal APIs + attribute routing)
+**Elixir:** Phoenix
 
 ## Security
 
