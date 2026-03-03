@@ -2,7 +2,7 @@
 
 How to integrate the AI chatbot into any PostgreSQL web app and keep it running on a server.
 
-> **Note:** The latest features (schema enrichment, CLI standalone, 17-framework route detection) are on the `v1-development` branch and NOT yet published to npm. Use the **Git-based installation** until a new npm version is published. Once published, the **npm approach** is the simplest way to get started.
+> **Note:** All features (schema enrichment, enum introspection, CLI standalone, 17-framework route detection) are available in `sql-chatbot-agent@1.1.2` on npm. The **npm approach** is the simplest way to get started.
 
 ## Table of Contents
 
@@ -166,7 +166,13 @@ export CHATBOT_SECRET="a-long-random-string-here"
 
 #### The `--code` Flag: Point to Your Source Code
 
-The `--code` flag tells the chatbot where your source code lives so it can detect routes and help with navigation/guidance questions. It's **not** limited to `./src` — use whatever directory your framework keeps code in. You can pass multiple `--code` flags.
+The `--code` flag tells the chatbot where your source code lives. It's used for:
+
+- **Route detection** — navigation and guidance answers
+- **Enum & constant discovery** — model-level enums (Rails `enum`, Django `choices`, TypeORM decorators, etc.) are surfaced as context for accurate SQL generation
+- **Business logic context** — calculations, validation rules, and domain logic help the LLM generate better queries
+
+It's **not** limited to `./src` — use whatever directory your framework keeps code in. You can pass multiple `--code` flags.
 
 | Framework | Typical `--code` value |
 |-----------|----------------------|
