@@ -77,9 +77,6 @@ export class Orchestrator {
     // --- Step 2: Route by question type ---
     switch (classification.type) {
       case 'data':
-        yield* this.handleData(input, history, schemaSummary);
-        break;
-
       case 'data_with_code':
         yield* this.handleDataWithCode(input, history, schemaSummary, classification.searchTerms);
         break;

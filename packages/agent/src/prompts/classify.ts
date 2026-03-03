@@ -31,12 +31,12 @@ UNSAFE DETECTION RULES:
 - Questions completely unrelated to the application or its data
 - Requests to execute arbitrary code or system commands
 
-For "code" and "data_with_code" types, also return searchTerms — 2-5 keywords to search the codebase.
+For "data", "data_with_code", and "code" types, also return searchTerms — 2-5 keywords to search the codebase for relevant context (enum definitions, business logic, constants).
 
 IMPORTANT: Use conversation history to resolve ambiguous follow-up questions. If the user says "how many?" after asking about users, they mean "how many users?".
 
 Respond with JSON only: {"type": "<type>", "confidence": <0.0-1.0>, "searchTerms": ["term1", "term2"]}
-searchTerms should only be included for "code" and "data_with_code" types.`;
+searchTerms should be included for "data", "data_with_code", and "code" types.`;
 
   let userContent = '';
   if (input.history && input.history.length > 0) {

@@ -453,6 +453,58 @@ describe('Orchestrator', () => {
     expect(events.some((e) => e.type === 'done')).toBe(true);
   });
 
+  // 12a. Data questions should also search code index for enum/business context
+  it('12a. data questions search code index when searchTerms provided', async () => {
+    mockClassification('data', 0.95, ['challenges', 'active']);
+    (codeIndexer.search as ReturnType<typeof vi.fn>).mockReturnValue([
+      { file: 'models/challenge.ts', content: 'enum Status { Draft, Active, Completed }', matchCount: 1 },
+    ]);
+    mockSqlGeneration("SELECT COUNT(*) FROM challenges WHERE status = 'Active'");
+    mockValidateSql.mockReturnValue({ valid: true, sql: "SELECT COUNT(*) FROM challenges WHERE status = 'Active'" });
+    mockExecuteSql.mockResolvedValue({
+      columns: ['count'],
+      rows: [{ count: 5 }],
+      rowCount: 1,
+    });
+    mockStream('There are 5 active challenges.');
+
+    const input: AskInput = { question: 'How many active challenges?' };
+    const events = await collectEvents(orchestrator.handleQuestion(input));
+
+    // Should have searched code index even for data type
+    expect(codeIndexer.search).toHaveBeenCalledWith(['challenges', 'active']);
+
+    // Should still produce full data pipeline events
+    const types = events.map((e) => e.type);
+    expect(types).toContain('sql');
+    expect(types).toContain('executing');
+    expect(types).toContain('token');
+    expect(types).toContain('done');
+  });
+
+  // 12b. Data questions without searchTerms should still work (no code search)
+  it('12b. data questions without searchTerms skip code search', async () => {
+    mockClassification('data');
+    mockSqlGeneration('SELECT COUNT(*) FROM users');
+    mockValidateSql.mockReturnValue({ valid: true, sql: 'SELECT COUNT(*) FROM users' });
+    mockExecuteSql.mockResolvedValue({
+      columns: ['count'],
+      rows: [{ count: 42 }],
+      rowCount: 1,
+    });
+    mockStream('42 users.');
+
+    const input: AskInput = { question: 'How many users?' };
+    const events = await collectEvents(orchestrator.handleQuestion(input));
+
+    // Without searchTerms, code search gets empty array → no results
+    // But codeIndexer.search should still be called (with [])
+    expect(codeIndexer.search).toHaveBeenCalledWith([]);
+
+    const types = events.map((e) => e.type);
+    expect(types).toContain('done');
+  });
+
   // 12. SQL generation returns JSON with missing sql field
   it('12. yields error when LLM returns JSON without sql field', async () => {
     mockClassification('data');

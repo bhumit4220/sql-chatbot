@@ -107,6 +107,18 @@ describe('buildClassifyMessages', () => {
     expect(userContent).not.toContain('Current page context:');
   });
 
+  it('should instruct classifier to return searchTerms for data type', () => {
+    const messages = buildClassifyMessages({
+      question: 'How many active challenges?',
+      schemaSummary: baseSchemaSummary,
+    });
+
+    const systemContent = messages[0].content as string;
+    // searchTerms must be requested for data, data_with_code, and code types
+    expect(systemContent).toMatch(/searchTerms.*"data"/s);
+    expect(systemContent).not.toMatch(/searchTerms should only be included for "code" and "data_with_code"/);
+  });
+
   it('should not contain app-specific references', () => {
     const messages = buildClassifyMessages({
       question: 'test',
