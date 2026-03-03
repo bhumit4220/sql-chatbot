@@ -79,6 +79,10 @@ describe('CodeIndexer', () => {
     writeFile(dir, 'app.py', 'python');
     writeFile(dir, 'app.erb', 'erb');
     writeFile(dir, 'app.vue', 'vue');
+    writeFile(dir, 'app.kt', 'kotlin');
+    writeFile(dir, 'app.rs', 'rust');
+    writeFile(dir, 'app.dart', 'dart');
+    writeFile(dir, 'app.scala', 'scala');
     writeFile(dir, 'app.css', 'skip css');
     writeFile(dir, 'app.html', 'skip html');
     writeFile(dir, 'app.json', 'skip json');
@@ -87,7 +91,7 @@ describe('CodeIndexer', () => {
 
     await indexer.index([dir]);
 
-    expect(indexer.fileCount()).toBe(8);
+    expect(indexer.fileCount()).toBe(12);
   });
 
   it('detects Express routes (app.get, router.post, etc.)', async () => {

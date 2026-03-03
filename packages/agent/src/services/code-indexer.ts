@@ -22,7 +22,7 @@ interface CodeIndexerOptions {
   maxFiles?: number;
 }
 
-const SUPPORTED_EXTENSIONS = new Set(['.js', '.ts', '.jsx', '.tsx', '.rb', '.py', '.erb', '.vue', '.php', '.java', '.go', '.cs', '.ex', '.exs', '.svelte']);
+const SUPPORTED_EXTENSIONS = new Set(['.js', '.ts', '.jsx', '.tsx', '.rb', '.py', '.erb', '.vue', '.php', '.java', '.go', '.cs', '.ex', '.exs', '.svelte', '.kt', '.rs', '.dart', '.scala']);
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'vendor', 'tmp', '__pycache__', '.next', '.svelte-kit', '.nuxt', 'target', 'bin', 'obj', 'deps', '_build']);
 const DEFAULT_MAX_FILES = 2000;
 
