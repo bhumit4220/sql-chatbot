@@ -9,7 +9,7 @@ import { PROVIDER_PRESETS } from './config.js';
 export interface CliFlags {
   db?: string;
   key?: string;
-  code?: string;
+  code?: string[];
   port?: string;
   secret?: string;
   provider?: string;
@@ -51,7 +51,7 @@ export function parseCliArgs(argv: string[]): CliFlags {
     options: {
       db: { type: 'string' },
       key: { type: 'string' },
-      code: { type: 'string' },
+      code: { type: 'string', multiple: true },
       port: { type: 'string', short: 'p' },
       secret: { type: 'string' },
       provider: { type: 'string' },
@@ -88,7 +88,7 @@ export function mergeConfig(
     provider,
     llmModel: flags.model || env.LLM_MODEL || file.llmModel,
     llmBaseUrl: flags['base-url'] || env.LLM_BASE_URL || file.llmBaseUrl,
-    codePaths: flags.code ? [flags.code] : file.codePaths || ['./src'],
+    codePaths: flags.code?.length ? flags.code : file.codePaths || ['./src'],
     port: flags.port ? parseInt(flags.port, 10) : env.PORT ? parseInt(env.PORT, 10) : file.port || 3456,
     secret: flags.secret || env.CHATBOT_SECRET || file.secret,
   };

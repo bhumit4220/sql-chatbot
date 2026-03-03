@@ -17,7 +17,12 @@ describe('parseCliArgs', () => {
 
   it('parses --code flag', () => {
     const result = parseCliArgs(['--code', './app']);
-    expect(result.code).toBe('./app');
+    expect(result.code).toEqual(['./app']);
+  });
+
+  it('parses multiple --code flags', () => {
+    const result = parseCliArgs(['--code', './app', '--code', './config']);
+    expect(result.code).toEqual(['./app', './config']);
   });
 
   it('parses --port flag', () => {
@@ -79,7 +84,7 @@ describe('parseCliArgs', () => {
     expect(result.key).toBe('gsk_xxx');
     expect(result.model).toBe('llama-3.3-70b-versatile');
     expect(result['base-url']).toBe('https://api.groq.com/openai/v1');
-    expect(result.code).toBe('./src');
+    expect(result.code).toEqual(['./src']);
     expect(result.port).toBe('4000');
     expect(result.secret).toBe('my-secret');
   });
