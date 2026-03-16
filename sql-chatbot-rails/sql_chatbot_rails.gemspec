@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.description   = "Embed an AI-powered database chatbot into any Rails application. Auto-discovers your PostgreSQL schema, indexes your codebase, generates SQL from natural language, and streams answers through a chat widget. Zero configuration required."
   spec.homepage      = "https://github.com/bhumit4220/sql-chatbot"
   spec.license       = "MIT"
-  spec.required_ruby_version = ">= 3.1.0"
+  spec.required_ruby_version = ">= 2.7.0"
 
   spec.files = Dir["lib/**/*", "app/**/*", "config/**/*", "vendor/**/*", "LICENSE", "README.md"]
 
