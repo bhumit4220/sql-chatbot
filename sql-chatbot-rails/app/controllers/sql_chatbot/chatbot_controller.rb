@@ -3,7 +3,7 @@
 module SqlChatbot
   class ChatbotController < ActionController::Base
     include ActionController::Live
-    skip_before_action :verify_authenticity_token, only: [:ask, :refresh]
+    skip_forgery_protection
 
     def widget
       if SqlChatbot.config&.secret
