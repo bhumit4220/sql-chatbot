@@ -13,4 +13,11 @@ SqlChatbot.configure do |c|
 
   # Code paths to index (defaults to ["./app"])
   # c.code_paths = ["./app", "./lib"]
+
+  # Optional: inject domain-specific context into SQL generation prompts
+  # Use this for non-standard FK names, soft-delete conventions, etc.
+  # c.custom_context = <<~CONTEXT
+  #   jobs.created_by is FK to customers.id (not customer_id)
+  #   status=3 means deleted across all tables
+  # CONTEXT
 end

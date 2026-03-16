@@ -10,7 +10,7 @@ module SqlChatbot
     }.freeze
 
     attr_accessor :llm_api_key, :llm_provider, :llm_model, :llm_base_url,
-                  :secret, :code_paths
+                  :secret, :code_paths, :custom_context
 
     def initialize
       @llm_provider = "openrouter"

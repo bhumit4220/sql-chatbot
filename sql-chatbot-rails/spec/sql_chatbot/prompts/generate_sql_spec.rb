@@ -36,5 +36,32 @@ RSpec.describe SqlChatbot::Prompts::GenerateSql do
       )
       expect(messages[1][:content]).to include("show users")
     end
+
+    context "with custom_context configured" do
+      before do
+        SqlChatbot.configure do |c|
+          c.custom_context = "jobs.created_by is the FK to customers.id, NOT customer_id"
+        end
+      end
+
+      after { SqlChatbot.reset! }
+
+      it "includes custom context in system prompt" do
+        messages = described_class.build_messages(question: "test", schema: "tables")
+        system_msg = messages.find { |m| m[:role] == "system" }
+        expect(system_msg[:content]).to include("ADDITIONAL DOMAIN CONTEXT")
+        expect(system_msg[:content]).to include("jobs.created_by is the FK to customers.id")
+      end
+    end
+
+    context "without custom_context configured" do
+      before { SqlChatbot.reset! }
+
+      it "does not include domain context section" do
+        messages = described_class.build_messages(question: "test", schema: "tables")
+        system_msg = messages.find { |m| m[:role] == "system" }
+        expect(system_msg[:content]).not_to include("ADDITIONAL DOMAIN CONTEXT")
+      end
+    end
   end
 end

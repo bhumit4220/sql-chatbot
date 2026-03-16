@@ -94,6 +94,19 @@ RSpec.describe SqlChatbot::Configuration do
     end
   end
 
+  describe "custom_context" do
+    it "stores custom_context" do
+      config = SqlChatbot::Configuration.new
+      config.custom_context = "jobs.created_by is FK to customers.id"
+      expect(config.custom_context).to eq("jobs.created_by is FK to customers.id")
+    end
+
+    it "defaults custom_context to nil" do
+      config = SqlChatbot::Configuration.new
+      expect(config.custom_context).to be_nil
+    end
+  end
+
   describe "SqlChatbot.configure" do
     it "yields configuration" do
       SqlChatbot.configure do |c|

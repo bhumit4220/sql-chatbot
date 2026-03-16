@@ -34,6 +34,12 @@ module SqlChatbot
           system += "\n\nRELEVANT CODE CONTEXT (use this to understand business logic, calculations, or field meanings):\n#{code_context}"
         end
 
+        # Inject custom domain context if configured
+        custom = SqlChatbot.config&.custom_context
+        if custom && !custom.empty?
+          system += "\n\nADDITIONAL DOMAIN CONTEXT (IMPORTANT — use this for non-standard patterns):\n#{custom}"
+        end
+
         user_content = ""
         if history && !history.empty?
           recent = history.last(4)
