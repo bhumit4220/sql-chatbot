@@ -1,0 +1,228 @@
+# frozen_string_literal: true
+
+require "json"
+require "sql_chatbot/prompts/classify"
+require "sql_chatbot/prompts/generate_sql"
+require "sql_chatbot/prompts/answer"
+require "sql_chatbot/services/sql_executor"
+
+module SqlChatbot
+  module Services
+    class Orchestrator
+      VALID_TYPES = %w[data data_with_code code navigation guidance greeting unsafe].freeze
+
+      def initialize(llm_client:, schema_service:, code_indexer:)
+        @llm = llm_client
+        @schema = schema_service
+        @code_indexer = code_indexer
+      end
+
+      # Returns an Enumerator that yields SSE event hashes.
+      # Events: classifying, classified, sql, executing, token, done, error
+      def handle_question(question:, page_context: nil, history: [])
+        Enumerator.new do |yielder|
+          begin
+            # --- Step 1: Classify ---
+            yielder.yield({ type: "classifying" })
+
+            schema_summary = @schema.summary
+            classify_messages = Prompts::Classify.build_messages(
+              question: question,
+              schema_summary: schema_summary,
+              page_context: page_context,
+              history: history
+            )
+
+            raw = @llm.call(classify_messages, json_mode: true)
+            classification = parse_classification(raw)
+
+            yielder.yield({
+              type: "classified",
+              questionType: classification[:type],
+              confidence: classification[:confidence]
+            })
+
+            # --- Step 2: Route by question type ---
+            case classification[:type]
+            when "data", "data_with_code"
+              handle_data_with_code(yielder, question, classification, schema_summary, page_context, history)
+            when "code"
+              handle_code(yielder, question, classification, history)
+            when "navigation", "guidance"
+              handle_navigation(yielder, question, classification[:type], page_context, history)
+            when "greeting"
+              handle_greeting(yielder, question, history)
+            when "unsafe"
+              handle_unsafe(yielder)
+            end
+
+            yielder.yield({ type: "done" })
+          rescue => e
+            yielder.yield({ type: "error", message: e.message })
+          end
+        end
+      end
+
+      private
+
+      # ============================================================
+      # Route handlers
+      # ============================================================
+
+      def handle_data_with_code(yielder, question, classification, schema_summary, page_context, history)
+        # Search code index for context
+        search_terms = classification[:searchTerms] || []
+        code_results = search_terms.empty? ? [] : @code_indexer.search(search_terms)
+        code_context = format_code_context(code_results)
+        code_snippets = to_code_snippets(code_results)
+
+        question_type = code_context.empty? ? "data" : "data_with_code"
+
+        # Generate SQL
+        gen_messages = Prompts::GenerateSql.build_messages(
+          question: question,
+          schema: schema_summary,
+          code_context: code_context.empty? ? nil : code_context,
+          history: history
+        )
+        raw_sql = @llm.call(gen_messages, json_mode: true)
+        parsed = parse_sql_generation(raw_sql)
+
+        if parsed[:sql].empty?
+          yielder.yield({ type: "error", message: "Failed to generate SQL" })
+          return
+        end
+
+        yielder.yield({ type: "sql", query: parsed[:sql], explanation: parsed[:explanation] })
+
+        # Validate SQL
+        validation = SqlExecutor.validate_sql(parsed[:sql])
+        unless validation[:valid]
+          yielder.yield({ type: "error", message: "SQL validation failed: #{validation[:reason]}" })
+          return
+        end
+
+        # Execute SQL
+        yielder.yield({ type: "executing" })
+
+        begin
+          result = SqlExecutor.execute_sql(validation[:sql])
+        rescue => e
+          yielder.yield({ type: "error", message: e.message })
+          return
+        end
+
+        # Stream answer
+        answer_messages = Prompts::Answer.build_messages(
+          question: question,
+          type: question_type,
+          sql_result: result[:rows],
+          sql_query: validation[:sql],
+          code_snippets: code_snippets.empty? ? nil : code_snippets,
+          page_context: page_context,
+          history: history
+        )
+
+        @llm.stream(answer_messages) do |chunk|
+          yielder.yield({ type: "token", content: chunk })
+        end
+      end
+
+      def handle_code(yielder, question, classification, history)
+        search_terms = classification[:searchTerms] || []
+        code_results = search_terms.empty? ? [] : @code_indexer.search(search_terms)
+
+        if code_results.empty?
+          yielder.yield({ type: "token", content: "I couldn't find relevant code for that question." })
+          return
+        end
+
+        code_snippets = to_code_snippets(code_results)
+
+        answer_messages = Prompts::Answer.build_messages(
+          question: question,
+          type: "code",
+          code_snippets: code_snippets,
+          history: history
+        )
+
+        @llm.stream(answer_messages) do |chunk|
+          yielder.yield({ type: "token", content: chunk })
+        end
+      end
+
+      def handle_navigation(yielder, question, type, page_context, history)
+        route_summary = @code_indexer.get_route_summary
+        nav_links = route_summary.is_a?(String) && !route_summary.empty? ? [route_summary] : []
+
+        answer_messages = Prompts::Answer.build_messages(
+          question: question,
+          type: type,
+          page_context: page_context,
+          navigation_links: nav_links.empty? ? nil : nav_links,
+          history: history
+        )
+
+        @llm.stream(answer_messages) do |chunk|
+          yielder.yield({ type: "token", content: chunk })
+        end
+      end
+
+      def handle_greeting(yielder, question, history)
+        answer_messages = Prompts::Answer.build_messages(
+          question: question,
+          type: "greeting",
+          history: history
+        )
+
+        @llm.stream(answer_messages) do |chunk|
+          yielder.yield({ type: "token", content: chunk })
+        end
+      end
+
+      def handle_unsafe(yielder)
+        yielder.yield({ type: "token", content: "I can't help with that request." })
+      end
+
+      # ============================================================
+      # Parsing helpers
+      # ============================================================
+
+      def parse_classification(raw)
+        parsed = JSON.parse(raw, symbolize_names: true)
+        type = parsed[:type]
+        type = "data" unless VALID_TYPES.include?(type)
+        {
+          type: type,
+          confidence: parsed[:confidence].is_a?(Numeric) ? parsed[:confidence] : 0.5,
+          searchTerms: parsed[:searchTerms].is_a?(Array) ? parsed[:searchTerms] : []
+        }
+      rescue JSON::ParserError
+        { type: "data", confidence: 0.5, searchTerms: [] }
+      end
+
+      def parse_sql_generation(raw)
+        parsed = JSON.parse(raw, symbolize_names: true)
+        sql = parsed[:sql]
+        sql = "" unless sql.is_a?(String) && !sql.empty?
+        { sql: sql, explanation: (parsed[:explanation] || "").to_s }
+      rescue JSON::ParserError
+        { sql: "", explanation: "" }
+      end
+
+      # ============================================================
+      # Formatting helpers
+      # ============================================================
+
+      def format_code_context(results)
+        return "" if results.empty?
+
+        results.map { |r| "File: #{r[:file]}\n#{r[:content]}" }.join("\n\n")
+      end
+
+      def to_code_snippets(results)
+        results.map { |r| { file_path: r[:file], content: r[:content] } }
+      end
+    end
+  end
+end
