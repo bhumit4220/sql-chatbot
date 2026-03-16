@@ -113,6 +113,8 @@ RSpec.describe "SqlChatbot Engine", type: :request do
         post "/chatbot/api/ask", params: { question: "How many users?" }
 
         expect(response).to have_http_status(:ok)
+        expect(response.media_type).to eq("text/event-stream")
+        expect(response.body).to include("data: ")
         expect(response.body).to include("test response")
       end
     end
@@ -172,6 +174,22 @@ RSpec.describe "SqlChatbot Engine", type: :request do
         expect(response.body).to include("test response")
       end
     end
+
+    context "when orchestrator raises an error" do
+      before do
+        SqlChatbot.reset!
+        allow(SqlChatbot).to receive(:ensure_initialized!)
+        orchestrator = double("orchestrator")
+        allow(orchestrator).to receive(:handle_question).and_raise(RuntimeError, "LLM timeout")
+        allow(SqlChatbot).to receive(:orchestrator).and_return(orchestrator)
+      end
+
+      it "streams an error event" do
+        post "/chatbot/api/ask", params: { question: "test" }
+        expect(response.body).to include("error")
+        expect(response.body).to include("LLM timeout")
+      end
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -195,6 +213,8 @@ RSpec.describe "SqlChatbot Engine", type: :request do
         expect(response).to have_http_status(:ok)
         body = JSON.parse(response.body)
         expect(body["status"]).to eq("refreshed")
+        expect(mock_schema_service).to have_received(:discover)
+        expect(mock_code_indexer).to have_received(:index)
       end
     end
 
