@@ -13,8 +13,8 @@ module SqlChatbot
           same_site: :strict,
         }
       end
-      send_file File.join(SqlChatbot::Engine.root, "vendor", "assets", "widget.js"),
-                type: "application/javascript", disposition: "inline"
+      widget_path = File.join(SqlChatbot::Engine.root, "vendor", "assets", "widget.js")
+      render body: File.read(widget_path), content_type: "application/javascript"
     end
 
     def health
