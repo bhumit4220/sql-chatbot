@@ -12,6 +12,7 @@ module SqlChatbot
       ]).freeze
 
       DEFAULT_MAX_FILES = 2000
+      MAX_FILE_SIZE = 100_000  # 100KB — skip vendor/minified JS libraries
       CONTEXT_LINES = 10
       MAX_SNIPPET_LINES = 50
       MAX_RESULTS = 10
@@ -121,6 +122,13 @@ module SqlChatbot
           elsif File.file?(full_path)
             ext = File.extname(entry)
             next unless SUPPORTED_EXTENSIONS.include?(ext)
+
+            # Skip large files (vendor/minified libraries)
+            begin
+              next if File.size(full_path) > MAX_FILE_SIZE
+            rescue SystemCallError
+              next
+            end
 
             relative_path = compute_relative_path(full_path, base_path)
             begin

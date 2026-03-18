@@ -52,8 +52,8 @@ RSpec.describe SqlChatbot::Prompts::Answer do
       expect(result).to include("Alice | 30")
     end
 
-    it "returns 'No results found.' for empty rows" do
-      expect(described_class.format_sql_result([])).to eq("No results found.")
+    it "returns zero results directive for empty rows" do
+      expect(described_class.format_sql_result([])).to eq("[ZERO RESULTS] No matching records exist.")
     end
   end
 end

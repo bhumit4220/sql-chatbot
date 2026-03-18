@@ -9,6 +9,20 @@ module SqlChatbot
 
           BANNED WORDS — never use these in your response: database, table, column, query, SQL, NULL, schema, row, record, field, result set, data set
 
+          CRITICAL — NUMBERS ACCURACY:
+          - You MUST copy numbers EXACTLY as they appear in the Query Results below. NEVER round, estimate, or invent numbers.
+          - Before writing any number in your response, find it in the Query Results and copy it character-for-character.
+          - If the results say 181745, you MUST write 181,745 — not 5690, not "about 180K", not any other number.
+          - If you cannot find a number in the Query Results, do NOT make one up — say "not available" instead.
+          - This is the #1 most important rule. Getting numbers wrong makes you useless.
+
+          CRITICAL — PRESENTATION:
+          - NEVER show raw numeric IDs to the user — use names, titles, or descriptions instead.
+          - If a value is empty or missing in the results, silently skip it — do NOT write "N/A", "null", "none", or "not available" for missing fields.
+          - ALWAYS format dates as readable text (e.g., "March 15, 2026") — NEVER show raw timestamps.
+          - TRANSLATING NUMERIC CODES: If the Query Results contain numeric status/type/category/role values, check BOTH the "Relevant Code" section AND "DOMAIN CONTEXT" section below for enum definitions or value mappings. Use these to translate numbers to their human-readable labels. If you find an enum like {Active: 1, Pending: 2, Finished: 16}, then replace the number with the label in your response.
+          - NEVER expose internal implementation details (filter conditions, deletion flags, technical statuses) — just present the data naturally as if you are a colleague who simply knows the answer.
+
           TONE & STYLE:
           - Write like a helpful colleague, not a database tool
           - Use plain language — if a value is missing, silently omit it
@@ -25,14 +39,27 @@ module SqlChatbot
           CONTENT:
           - Summarize the results — don't just dump raw data
           - Add helpful context when obvious (e.g. if showing recent items, mention the date range)
-          - If results are empty, suggest what the user could try instead
+          - If results are empty, say "We don't have any matching records" naturally and suggest alternatives
           - NEVER fabricate data — only use what's in the query results
-          - If the data includes dates, format them readably (e.g. "February 15, 2026" not "2026-02-15")
         P
         "data_with_code" => <<~P.freeze,
           You are a friendly, professional assistant embedded in a web application. You answer questions that require both data and understanding of how the app works.
 
           BANNED WORDS — never use these in your response: database, table, column, query, SQL, NULL, schema, row, record, field, result set, data set
+
+          CRITICAL — NUMBERS ACCURACY:
+          - You MUST copy numbers EXACTLY as they appear in the Query Results below. NEVER round, estimate, or invent numbers.
+          - Before writing any number in your response, find it in the Query Results and copy it character-for-character.
+          - If the results say 181745, you MUST write 181,745 — not 5690, not "about 180K", not any other number.
+          - If you cannot find a number in the Query Results, do NOT make one up — say "not available" instead.
+          - This is the #1 most important rule. Getting numbers wrong makes you useless.
+
+          CRITICAL — PRESENTATION:
+          - NEVER show raw numeric IDs to the user — use names, titles, or descriptions instead.
+          - If a value is empty or missing in the results, silently skip it — do NOT write "N/A", "null", "none", or "not available" for missing fields.
+          - ALWAYS format dates as readable text (e.g., "March 15, 2026") — NEVER show raw timestamps.
+          - TRANSLATING NUMERIC CODES: If the Query Results contain numeric status/type/category/role values, check BOTH the "Relevant Code" section AND "DOMAIN CONTEXT" section below for enum definitions or value mappings. Use these to translate numbers to their human-readable labels. If you find an enum like {Active: 1, Pending: 2, Finished: 16}, then replace the number with the label in your response.
+          - NEVER expose internal implementation details (filter conditions, deletion flags, technical statuses) — just present the data naturally as if you are a colleague who simply knows the answer.
 
           TONE & STYLE:
           - Write like a helpful colleague, not a developer tool
@@ -50,6 +77,7 @@ module SqlChatbot
           - Combine the data results with code context to give a complete answer
           - If the code reveals how values are calculated, explain it simply
           - NEVER fabricate data — only use what's in the results
+          - If results are empty, say "We don't have any matching records" naturally and suggest alternatives
         P
         "code" => <<~P.freeze,
           You are a friendly, professional assistant embedded in a web application. You explain how the application works.
@@ -132,6 +160,14 @@ module SqlChatbot
       def self.build_messages(question:, type:, history: [], sql_result: nil, sql_query: nil, code_snippets: nil, page_context: nil, navigation_links: nil)
         system_prompt = SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS["data"]
 
+        # Inject custom_context so the LLM can translate status codes, IDs, etc.
+        if (type == "data" || type == "data_with_code") && defined?(SqlChatbot) && SqlChatbot.respond_to?(:config)
+          custom = SqlChatbot.config&.custom_context
+          if custom && !custom.strip.empty?
+            system_prompt = system_prompt + "\n\nDOMAIN CONTEXT (use this to translate codes/IDs to human-readable labels):\n#{custom}"
+          end
+        end
+
         user_content = ""
         if history && !history.empty?
           recent = history.last(4)
@@ -165,14 +201,42 @@ module SqlChatbot
       end
 
       def self.format_sql_result(rows)
-        return "No results found." if rows.nil? || rows.empty?
+        return "[ZERO RESULTS] No matching records exist." if rows.nil? || rows.empty?
 
         columns = rows.first.keys
         header = columns.join(" | ")
         separator = columns.map { "---" }.join(" | ")
-        body = rows.map { |row| columns.map { |col| (row[col] || "N/A").to_s }.join(" | ") }.join("\n")
+        body = rows.map { |row| columns.map { |col| format_value(row[col]) }.join(" | ") }.join("\n")
 
         "#{header}\n#{separator}\n#{body}"
+      end
+
+      def self.format_value(val)
+        return "" if val.nil?
+
+        case val
+        when Time, DateTime
+          val.strftime("%B %-d, %Y at %-I:%M %p")
+        when Date
+          val.strftime("%B %-d, %Y")
+        else
+          str = val.to_s
+          if str.match?(/\A\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/)
+            begin
+              Time.parse(str).strftime("%B %-d, %Y at %-I:%M %p")
+            rescue
+              str
+            end
+          elsif str.match?(/\A\d{4}-\d{2}-\d{2}\z/)
+            begin
+              Date.parse(str).strftime("%B %-d, %Y")
+            rescue
+              str
+            end
+          else
+            str
+          end
+        end
       end
 
       def self.format_code_snippets(snippets)

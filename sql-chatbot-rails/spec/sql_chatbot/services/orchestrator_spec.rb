@@ -93,7 +93,7 @@ RSpec.describe SqlChatbot::Services::Orchestrator do
         types = events.map { |e| e[:type] }
 
         expect(types).to include("error")
-        expect(events.find { |e| e[:type] == "error" }[:message]).to include("nonexistent")
+        expect(events.find { |e| e[:type] == "error" }[:message]).to include("Something went wrong")
       end
     end
 
@@ -212,7 +212,7 @@ RSpec.describe SqlChatbot::Services::Orchestrator do
         types = events.map { |e| e[:type] }
 
         expect(types).to include("classifying", "error")
-        expect(events.find { |e| e[:type] == "error" }[:message]).to eq("API timeout")
+        expect(events.find { |e| e[:type] == "error" }[:message]).to include("took too long")
       end
 
       it "emits error event when stream raises" do
@@ -223,7 +223,7 @@ RSpec.describe SqlChatbot::Services::Orchestrator do
         types = events.map { |e| e[:type] }
 
         expect(types).to include("error")
-        expect(events.find { |e| e[:type] == "error" }[:message]).to eq("stream failed")
+        expect(events.find { |e| e[:type] == "error" }[:message]).to include("Something went wrong")
       end
     end
 

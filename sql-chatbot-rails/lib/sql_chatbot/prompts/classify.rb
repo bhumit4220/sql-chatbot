@@ -23,6 +23,7 @@ module SqlChatbot
         - Requests to execute arbitrary code or system commands
 
         For "data", "data_with_code", and "code" types, also return searchTerms — 2-5 keywords to search the codebase for relevant context (enum definitions, business logic, constants).
+        IMPORTANT: When the question involves columns that commonly have code-defined mappings (status, type, category, role, kind, state, priority, level), ALWAYS include "enum" as one of the searchTerms so we can find the value definitions in the codebase.
 
         IMPORTANT: Use conversation history to resolve ambiguous follow-up questions. If the user says "how many?" after asking about users, they mean "how many users?".
 

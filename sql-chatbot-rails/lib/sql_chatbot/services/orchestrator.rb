@@ -58,7 +58,8 @@ module SqlChatbot
 
             yielder.yield({ type: "done" })
           rescue => e
-            yielder.yield({ type: "error", message: e.message })
+            log_error(e)
+            yielder.yield({ type: "error", message: friendly_error_message(e) })
           end
         end
       end
@@ -108,7 +109,8 @@ module SqlChatbot
         begin
           result = SqlExecutor.execute_sql(validation[:sql])
         rescue => e
-          yielder.yield({ type: "error", message: e.message })
+          log_error(e)
+          yielder.yield({ type: "error", message: friendly_error_message(e) })
           return
         end
 
@@ -222,6 +224,37 @@ module SqlChatbot
 
       def to_code_snippets(results)
         results.map { |r| { file_path: r[:file], content: r[:content] } }
+      end
+
+      def friendly_error_message(exception)
+        msg = exception.message.to_s
+        cls = exception.class.name.to_s
+
+        if cls.start_with?("PG::")
+          case cls
+          when "PG::ConnectionBad"
+            "I'm having trouble connecting right now. Please try again in a moment."
+          when "PG::QueryCanceled"
+            "That question required too much processing. Could you try a more specific question?"
+          else
+            "I couldn't find the information needed to answer that. Could you rephrase your question?"
+          end
+        elsif msg.include?("timeout") || msg.include?("Timeout")
+          "That took too long to process. Try asking a more specific question."
+        elsif msg.include?("401") || msg.include?("Unauthorized")
+          "I'm having trouble reaching the AI service. Please check the API key configuration."
+        elsif msg.include?("429") || msg.include?("rate limit")
+          "The AI service is busy right now. Please try again in a moment."
+        else
+          "Something went wrong while processing your question. Please try again."
+        end
+      end
+
+      def log_error(exception)
+        if defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger
+          Rails.logger.error("[SqlChatbot] #{exception.class}: #{exception.message}")
+          Rails.logger.error(exception.backtrace&.first(5)&.join("\n")) if exception.backtrace
+        end
       end
     end
   end
