@@ -73,6 +73,35 @@ module SqlChatbot
         @tables.length
       end
 
+      # Inject model-level annotations (from ModelIntrospector) into the schema summary.
+      # annotations_by_table: Hash of table_name => [annotation_strings]
+      # Each annotation is inserted after the TABLE line and any existing annotations.
+      def append_model_annotations(annotations_by_table)
+        return if annotations_by_table.nil? || annotations_by_table.empty?
+
+        lines = @summary_text.split("\n")
+        result = []
+        current_table = nil
+
+        lines.each do |line|
+          if line.start_with?("TABLE ")
+            # Before moving to next table, flush pending annotations for previous table
+            if current_table && annotations_by_table.key?(current_table)
+              annotations_by_table[current_table].each { |ann| result << ann }
+            end
+            current_table = line.match(/^TABLE (\S+)/)[1]
+          end
+          result << line
+        end
+
+        # Flush annotations for the last table
+        if current_table && annotations_by_table.key?(current_table)
+          annotations_by_table[current_table].each { |ann| result << ann }
+        end
+
+        @summary_text = result.join("\n")
+      end
+
       # Introspect the database and build a schema summary string with enrichment
       # annotations (soft delete, polymorphic, lookup values, enums, check constraints).
       # Requires ActiveRecord::Base.connection to be available.

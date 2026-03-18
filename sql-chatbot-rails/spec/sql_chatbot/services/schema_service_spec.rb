@@ -247,4 +247,90 @@ RSpec.describe SqlChatbot::Services::SchemaService do
       expect(service.table_count).to eq(0)
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # #append_model_annotations
+  # ---------------------------------------------------------------------------
+  describe "#append_model_annotations" do
+    let(:service) { described_class.new }
+
+    before do
+      # Set up a fake summary_text (bypass discover)
+      service.instance_variable_set(:@summary_text, <<~SCHEMA.strip)
+        TABLE users (id INT PK, name VARCHAR)
+          -- SOFT DELETE: filter deleted_at IS NULL for active records
+        TABLE jobs (id INT PK, created_by INT, status INT)
+        TABLE transactions (id INT PK, type VARCHAR, amount DECIMAL)
+          -- POLYMORPHIC: commentable_type + commentable_id
+      SCHEMA
+    end
+
+    it "injects annotations after the correct table" do
+      annotations = {
+        "jobs" => ["  -- RAILS ENUM: status values: Active=1, Pending=2, Deleted=3"]
+      }
+      service.append_model_annotations(annotations)
+
+      lines = service.summary.split("\n")
+      jobs_idx = lines.index { |l| l.start_with?("TABLE jobs") }
+      expect(lines[jobs_idx + 1]).to include("RAILS ENUM: status")
+    end
+
+    it "appends after existing annotations for a table" do
+      annotations = {
+        "users" => ["  -- RAILS ENUM: role values: Admin=0, User=1"]
+      }
+      service.append_model_annotations(annotations)
+
+      lines = service.summary.split("\n")
+      users_idx = lines.index { |l| l.start_with?("TABLE users") }
+      # Existing annotation is at users_idx + 1
+      expect(lines[users_idx + 1]).to include("SOFT DELETE")
+      # New annotation at users_idx + 2
+      expect(lines[users_idx + 2]).to include("RAILS ENUM: role")
+    end
+
+    it "handles multiple annotations for one table" do
+      annotations = {
+        "jobs" => [
+          "  -- RAILS ENUM: status values: Active=1, Deleted=3",
+          "  -- MODEL FK: created_by -> customers.id (belongs_to :creator)"
+        ]
+      }
+      service.append_model_annotations(annotations)
+
+      lines = service.summary.split("\n")
+      jobs_idx = lines.index { |l| l.start_with?("TABLE jobs") }
+      expect(lines[jobs_idx + 1]).to include("RAILS ENUM")
+      expect(lines[jobs_idx + 2]).to include("MODEL FK")
+    end
+
+    it "handles annotations for the last table" do
+      annotations = {
+        "transactions" => ["  -- RAILS ENUM: kind values: Credit=0, Debit=1"]
+      }
+      service.append_model_annotations(annotations)
+
+      lines = service.summary.split("\n")
+      expect(lines.last).to include("RAILS ENUM: kind")
+    end
+
+    it "does nothing with empty annotations" do
+      original = service.summary.dup
+      service.append_model_annotations({})
+      expect(service.summary).to eq(original)
+    end
+
+    it "does nothing with nil annotations" do
+      original = service.summary.dup
+      service.append_model_annotations(nil)
+      expect(service.summary).to eq(original)
+    end
+
+    it "ignores annotations for tables not in the schema" do
+      original = service.summary.dup
+      service.append_model_annotations({ "nonexistent" => ["  -- RAILS ENUM: x values: A=1"] })
+      expect(service.summary).to eq(original)
+    end
+  end
 end
