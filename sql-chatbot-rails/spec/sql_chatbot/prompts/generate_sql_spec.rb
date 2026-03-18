@@ -12,10 +12,24 @@ RSpec.describe SqlChatbot::Prompts::GenerateSql do
       expect(messages[0][:role]).to eq("system")
     end
 
-    it "includes all 17 rules in system prompt" do
+    it "includes all 19 rules in system prompt" do
       messages = described_class.build_messages(question: "test", schema: "")
       system = messages[0][:content]
-      (1..17).each { |n| expect(system).to include("#{n}.") }
+      (1..19).each { |n| expect(system).to include("#{n}.") }
+    end
+
+    it "includes rule 18 about RAILS ENUM values" do
+      messages = described_class.build_messages(question: "test", schema: "TABLE t (id INT)")
+      system = messages.first[:content]
+      expect(system).to include("RAILS ENUM")
+      expect(system).to include("NUMERIC value")
+    end
+
+    it "includes rule 19 about MODEL FK joins" do
+      messages = described_class.build_messages(question: "test", schema: "TABLE t (id INT)")
+      system = messages.first[:content]
+      expect(system).to include("MODEL FK")
+      expect(system).to include("MODEL FOREIGN KEYS")
     end
 
     it "appends code context when provided" do

@@ -24,6 +24,8 @@ module SqlChatbot
         15. POLYMORPHIC JOINS: When a table has "-- POLYMORPHIC: X_type + X_id", join using both: WHERE X_type = 'ModelName' AND X_id = target.id. The type value is the singular PascalCase of the target table name (e.g. titles → "Title", users → "User")
         16. LOOKUP VALUES: When a table has "-- VALUES: id=name" mappings, use these exact IDs in WHERE clauses. For example, if categories shows "1=TV Shows, 2=Movie" and the user asks about movies, use category_id = 2
         17. ENUM VALUES: When a column has "-- ENUM: column values: X, Y, Z" annotation, use ONLY these exact values (case-sensitive) in WHERE clauses. Never guess enum values.
+        18. RAILS ENUM VALUES: When a table has "-- RAILS ENUM: column values: Label=N, ..." annotation, the database stores the NUMERIC value N, not the label string. Use WHERE column = N. For example, if "RAILS ENUM: status values: Active=1, Pending=2, Deleted=3", use WHERE status = 1 for active records and WHERE status != 3 to exclude deleted.
+        19. MODEL FOREIGN KEYS: When a table has "-- MODEL FK: column -> target_table.id" annotation, use this column for JOINs even if it doesn't follow standard naming. For example, "MODEL FK: created_by -> customers.id" means JOIN customers ON jobs.created_by = customers.id.
 
         Respond with JSON only: {"sql": "<the SQL query>", "explanation": "<brief explanation of what the query does>"}
       PROMPT
