@@ -10,6 +10,7 @@ require "sql_chatbot/services/sql_executor"
 require "sql_chatbot/services/schema_service"
 require "sql_chatbot/services/code_indexer"
 require "sql_chatbot/services/orchestrator"
+require "sql_chatbot/services/model_introspector"
 require "sql_chatbot/engine" if defined?(Rails)
 
 module SqlChatbot
@@ -39,6 +40,11 @@ module SqlChatbot
 
         @schema_service = Services::SchemaService.new
         @schema_service.discover
+
+        # Introspect Rails models for enums and non-standard FKs
+        introspector = Services::ModelIntrospector.new
+        model_annotations = introspector.introspect
+        @schema_service.append_model_annotations(model_annotations)
 
         @code_indexer = Services::CodeIndexer.new
         @code_indexer.index(cfg.code_paths)
