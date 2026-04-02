@@ -9,7 +9,7 @@ require "sql_chatbot/services/orchestrator"
 RSpec.describe SqlChatbot::Services::Orchestrator do
   let(:llm_client) { instance_double(SqlChatbot::LLM::Client) }
   let(:schema_service) { instance_double(SqlChatbot::Services::SchemaService, summary: "TABLE users (id INT, name VARCHAR)", find_lookup_hints: []) }
-  let(:code_indexer) { instance_double(SqlChatbot::Services::CodeIndexer, search: [], get_route_summary: "") }
+  let(:code_indexer) { instance_double(SqlChatbot::Services::CodeIndexer, search: [], get_route_summary: "", get_routes: []) }
   let(:orchestrator) { described_class.new(llm_client: llm_client, schema_service: schema_service, code_indexer: code_indexer) }
 
   describe "#handle_question" do
@@ -288,6 +288,53 @@ RSpec.describe SqlChatbot::Services::Orchestrator do
       %w[data data_with_code code navigation guidance greeting unsafe].each do |type|
         result = orchestrator.send(:parse_classification, %({"type":"#{type}","confidence":0.9}))
         expect(result[:type]).to eq(type), "Expected #{type} to be accepted"
+      end
+    end
+  end
+
+  describe "#set_manifest" do
+    it "stores manifest routes" do
+      manifest = {
+        "version" => 1,
+        "routes" => [
+          { "path" => "/admin/users", "method" => "GET", "label" => "Users" },
+          { "path" => "/admin/settings", "method" => "GET", "label" => "Settings" },
+        ]
+      }
+      orchestrator.set_manifest(manifest)
+      expect(orchestrator.route_list).to include("/admin/users")
+      expect(orchestrator.route_list).to include("Users")
+    end
+  end
+
+  describe "#route_list" do
+    context "with both manifest and code indexer routes" do
+      it "merges and deduplicates routes" do
+        allow(code_indexer).to receive(:get_routes).and_return([
+          { method: "GET", path: "/admin/users", file: "app/controllers/admin/users_controller.rb" },
+          { method: "GET", path: "/api/health", file: "app/controllers/health_controller.rb" },
+        ])
+        manifest = {
+          "version" => 1,
+          "routes" => [
+            { "path" => "/admin/users", "method" => "GET", "label" => "Users" },
+            { "path" => "/dashboard", "method" => "GET", "label" => "Dashboard" },
+          ]
+        }
+        orchestrator.set_manifest(manifest)
+        list = orchestrator.route_list
+        expect(list).to include("Users")
+        expect(list).to include("Dashboard")
+        expect(list.scan("/admin/users").length).to eq(1)
+      end
+    end
+
+    context "without manifest" do
+      it "falls back to code indexer routes" do
+        allow(code_indexer).to receive(:get_routes).and_return([
+          { method: "GET", path: "/admin/users", file: "controllers/admin/users_controller.rb" },
+        ])
+        expect(orchestrator.route_list).to include("/admin/users")
       end
     end
   end

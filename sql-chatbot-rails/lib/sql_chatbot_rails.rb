@@ -11,6 +11,7 @@ require "sql_chatbot/services/schema_service"
 require "sql_chatbot/services/code_indexer"
 require "sql_chatbot/services/orchestrator"
 require "sql_chatbot/services/model_introspector"
+require "sql_chatbot/services/route_introspector"
 require "sql_chatbot/auth/jwt"
 require "sql_chatbot/auth/cors"
 require "sql_chatbot/engine" if defined?(Rails)
@@ -59,6 +60,10 @@ module SqlChatbot
         # Move lookup values from referenced tables to FK columns
         @schema_service.relocate_lookup_annotations
 
+        # Introspect Rails routes for navigation context
+        route_introspector = Services::RouteIntrospector.new
+        route_data = route_introspector.introspect
+
         @code_indexer = Services::CodeIndexer.new
         @code_indexer.index(cfg.code_paths)
 
@@ -72,6 +77,7 @@ module SqlChatbot
           llm_client: llm_client,
           schema_service: @schema_service,
           code_indexer: @code_indexer,
+          route_introspector_data: route_data,
         )
 
         @initialized = true

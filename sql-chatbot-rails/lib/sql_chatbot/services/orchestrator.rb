@@ -11,10 +11,25 @@ module SqlChatbot
     class Orchestrator
       VALID_TYPES = %w[data data_with_code code navigation guidance greeting unsafe].freeze
 
-      def initialize(llm_client:, schema_service:, code_indexer:)
+      def initialize(llm_client:, schema_service:, code_indexer:, route_introspector_data: nil)
         @llm = llm_client
         @schema = schema_service
         @code_indexer = code_indexer
+        @route_introspector_data = route_introspector_data
+        @manifest = nil
+      end
+
+      def set_manifest(manifest)
+        version = manifest["version"] || manifest[:version]
+        unless version == 1
+          warn "[SqlChatbot] Unsupported manifest version: #{version}"
+          return
+        end
+        @manifest = manifest
+      end
+
+      def route_list
+        build_route_list
       end
 
       # Returns an Enumerator that yields SSE event hashes.
@@ -259,6 +274,47 @@ module SqlChatbot
           Rails.logger.error("[SqlChatbot] #{exception.class}: #{exception.message}")
           Rails.logger.error(exception.backtrace&.first(5)&.join("\n")) if exception.backtrace
         end
+      end
+
+      def build_route_list
+        routes_by_path = {}
+
+        # 1. Code indexer routes (lowest priority)
+        @code_indexer.get_routes.each do |r|
+          routes_by_path[r[:path]] ||= { path: r[:path], method: r[:method], label: nil, source: "code_indexer" }
+        end
+
+        # 2. Manifest routes from widget (higher priority, has labels)
+        if @manifest && @manifest["routes"]
+          @manifest["routes"].each do |r|
+            routes_by_path[r["path"]] = {
+              path: r["path"],
+              method: r["method"] || "GET",
+              label: r["label"],
+              parentPath: r["parentPath"],
+              source: "manifest"
+            }
+          end
+        end
+
+        # 3. RouteIntrospector routes (highest priority for Rails apps)
+        if @route_introspector_data
+          @route_introspector_data.each do |r|
+            routes_by_path[r[:path]] = r.merge(source: "introspector")
+          end
+        end
+
+        return "No application routes detected." if routes_by_path.empty?
+
+        lines = routes_by_path.values
+          .select { |r| r[:method] == "GET" }
+          .map do |r|
+            parent_note = r[:parentPath] ? " (under #{r[:parentPath]})" : ""
+            label = r[:label] || r[:path].split("/").last&.capitalize || "Page"
+            "- #{r[:path]} \u2014 #{label}#{parent_note}"
+          end
+
+        "## Available Application Pages\n#{lines.join("\n")}"
       end
     end
   end
