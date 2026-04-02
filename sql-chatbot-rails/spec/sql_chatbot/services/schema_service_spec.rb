@@ -335,6 +335,64 @@ RSpec.describe SqlChatbot::Services::SchemaService do
   end
 
   # ---------------------------------------------------------------------------
+  # #relocate_lookup_annotations
+  # ---------------------------------------------------------------------------
+  describe "#relocate_lookup_annotations" do
+    let(:service) { described_class.new }
+
+    it "annotates explicit FK columns instead of lookup tables" do
+      service.instance_variable_set(:@summary_text, [
+        "TABLE categories (id INT PK, name VARCHAR)",
+        "  -- VALUES: 1=Tv Shows, 2=Movie",
+        "TABLE titles (id INT PK, name VARCHAR, category_id INT FK=>categories.id, status INT)",
+      ].join("\n"))
+
+      service.relocate_lookup_annotations
+
+      expect(service.summary).to include("FK LOOKUP: category_id values: 1=Tv Shows, 2=Movie")
+      expect(service.summary).not_to include("-- VALUES:")
+    end
+
+    it "annotates convention-based FK columns (no explicit FK marker)" do
+      service.instance_variable_set(:@summary_text, [
+        "TABLE categories (id INT PK, name VARCHAR)",
+        "  -- VALUES: 1=Tv Shows, 2=Movie",
+        "TABLE titles (id INT PK, name VARCHAR, category_id INT, status INT)",
+      ].join("\n"))
+
+      service.relocate_lookup_annotations
+
+      expect(service.summary).to include("FK LOOKUP: category_id values: 1=Tv Shows, 2=Movie")
+      expect(service.summary).not_to include("-- VALUES:")
+    end
+
+    it "annotates multiple FK columns referencing the same lookup table" do
+      service.instance_variable_set(:@summary_text, [
+        "TABLE categories (id INT PK, name VARCHAR)",
+        "  -- VALUES: 1=Tv Shows, 2=Movie",
+        "TABLE titles (id INT PK, category_id INT FK=>categories.id)",
+        "TABLE posts (id INT PK, category_id INT)",
+      ].join("\n"))
+
+      service.relocate_lookup_annotations
+
+      expect(service.summary).not_to include("-- VALUES:")
+      lines = service.summary.split("\n")
+      fk_lookups = lines.select { |l| l.include?("FK LOOKUP") }
+      expect(fk_lookups.length).to eq(2)
+    end
+
+    it "does nothing when no VALUES annotations exist" do
+      original = "TABLE titles (id INT PK, name VARCHAR)"
+      service.instance_variable_set(:@summary_text, original)
+
+      service.relocate_lookup_annotations
+
+      expect(service.summary).to eq(original)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # #apply_soft_delete_annotations
   # ---------------------------------------------------------------------------
   describe "#apply_soft_delete_annotations" do

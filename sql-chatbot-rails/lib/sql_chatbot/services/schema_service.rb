@@ -248,6 +248,73 @@ module SqlChatbot
         discover
       end
 
+      # Move "-- VALUES:" annotations from lookup tables to the FK columns that reference them.
+      # After this, LLMs see lookup values next to the FK column (e.g., category_id) instead of
+      # on the lookup table itself, preventing confusion between unrelated integer columns.
+      def relocate_lookup_annotations
+        lines = @summary_text.split("\n")
+
+        # Step 1: Extract VALUES annotations and their tables
+        lookup_values = {} # table_name => values_string
+        lines_without_values = []
+        current_table = nil
+
+        lines.each do |line|
+          if line.start_with?("TABLE ")
+            current_table = line.match(/^TABLE (\S+)/)[1]
+          end
+
+          if line.strip.start_with?("-- VALUES:")
+            lookup_values[current_table] = line.strip.sub("-- VALUES: ", "") if current_table
+          else
+            lines_without_values << line
+          end
+        end
+
+        return if lookup_values.empty?
+
+        # Step 2: Build convention-based table name patterns for matching
+        convention_map = {} # "singular_id" => lookup_table
+        lookup_values.each_key do |table|
+          singular = if table.end_with?("ies")
+                       table[0..-4] + "y"
+                     elsif table.end_with?("ses")
+                       table[0..-3]
+                     elsif table.end_with?("s")
+                       table[0..-2]
+                     else
+                       table
+                     end
+          convention_map["#{singular}_id"] = table
+        end
+
+        # Step 3: Find FK columns and inject FK LOOKUP annotations
+        result = []
+        lines_without_values.each do |line|
+          result << line
+
+          if line.start_with?("TABLE ")
+            # Match explicit FK references: "column_name INT FK=>target_table.target_column"
+            lookup_values.each do |lookup_table, values|
+              line.scan(/(\w+)\s+\w+\s+FK=>#{Regexp.escape(lookup_table)}\.(\w+)/).each do |fk_col, _target_col|
+                result << "  -- FK LOOKUP: #{fk_col} values: #{values}"
+              end
+            end
+
+            # Match convention-based references: "category_id INT" (no FK=> marker)
+            convention_map.each do |fk_col_name, lookup_table|
+              # Skip if already matched by explicit FK above
+              next if line.include?("#{fk_col_name} ") && line.include?("FK=>#{lookup_table}")
+              if line.match?(/\b#{Regexp.escape(fk_col_name)}\s+\w+(?!\s+FK)/)
+                result << "  -- FK LOOKUP: #{fk_col_name} values: #{lookup_values[lookup_table]}"
+              end
+            end
+          end
+        end
+
+        @summary_text = result.join("\n")
+      end
+
       # Apply soft delete annotations conditionally based on model introspection results.
       # - Tables using a soft delete gem (paranoia, discard): always add SOFT DELETE annotation
       # - Tables with enum soft delete but no gem: suppress SOFT DELETE (enum is the real mechanism)
