@@ -27,6 +27,8 @@ module SqlChatbot
         response.headers["Access-Control-Allow-Methods"] = ALLOWED_METHODS
         response.headers["Access-Control-Allow-Headers"] = ALLOWED_HEADERS
         response.headers["Access-Control-Max-Age"] = MAX_AGE
+        existing_vary = response.headers["Vary"]
+        response.headers["Vary"] = existing_vary ? "#{existing_vary}, Origin" : "Origin"
       end
     end
   end
