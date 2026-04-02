@@ -257,6 +257,74 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
       end
     end
 
+    context "with enum containing deleted value" do
+      let(:model) do
+        fake_model(
+          table_name: "jobs",
+          enums: { "status" => { "Active" => 1, "Pending" => 2, "Deleted" => 3 } }
+        )
+      end
+
+      before do
+        stub_const("ActiveRecord::Base", Class.new {
+          define_singleton_method(:descendants) { [] }
+        })
+        allow(ActiveRecord::Base).to receive(:descendants).and_return([model])
+      end
+
+      it "adds ENUM SOFT DELETE annotation" do
+        result = introspector.introspect
+        expect(result["jobs"]).to include(
+          a_string_matching(/ENUM SOFT DELETE: status != 3 to exclude deleted records/)
+        )
+      end
+    end
+
+    context "with enum containing archived value" do
+      let(:model) do
+        fake_model(
+          table_name: "posts",
+          enums: { "state" => { "draft" => 0, "published" => 1, "archived" => 2 } }
+        )
+      end
+
+      before do
+        stub_const("ActiveRecord::Base", Class.new {
+          define_singleton_method(:descendants) { [] }
+        })
+        allow(ActiveRecord::Base).to receive(:descendants).and_return([model])
+      end
+
+      it "adds ENUM SOFT DELETE annotation for archived" do
+        result = introspector.introspect
+        expect(result["posts"]).to include(
+          a_string_matching(/ENUM SOFT DELETE: state != 2 to exclude archived records/)
+        )
+      end
+    end
+
+    context "with enum that has no deleted/archived values" do
+      let(:model) do
+        fake_model(
+          table_name: "jobs",
+          enums: { "priority" => { "Low" => 0, "High" => 1 } }
+        )
+      end
+
+      before do
+        stub_const("ActiveRecord::Base", Class.new {
+          define_singleton_method(:descendants) { [] }
+        })
+        allow(ActiveRecord::Base).to receive(:descendants).and_return([model])
+      end
+
+      it "does not add ENUM SOFT DELETE annotation" do
+        result = introspector.introspect
+        annotations = result["jobs"] || []
+        expect(annotations.none? { |a| a.include?("ENUM SOFT DELETE") }).to be true
+      end
+    end
+
     context "with both enums and non-standard FKs" do
       let(:reflection) do
         fake_reflection(name: :creator, foreign_key: "created_by", class_name: "Customer")
@@ -276,10 +344,11 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
         allow(ActiveRecord::Base).to receive(:descendants).and_return([model])
       end
 
-      it "returns both enum and FK annotations" do
+      it "returns enum, soft delete, and FK annotations" do
         result = introspector.introspect
-        expect(result["jobs"].length).to eq(2)
+        expect(result["jobs"].length).to eq(3)
         expect(result["jobs"]).to include(a_string_matching(/RAILS ENUM/))
+        expect(result["jobs"]).to include(a_string_matching(/ENUM SOFT DELETE/))
         expect(result["jobs"]).to include(a_string_matching(/MODEL FK/))
       end
     end

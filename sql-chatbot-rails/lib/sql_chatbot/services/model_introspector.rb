@@ -64,6 +64,8 @@ module SqlChatbot
         false
       end
 
+      SOFT_DELETE_LABELS = %w[deleted archived removed discarded].freeze
+
       def detect_enums(model, table, annotations)
         return unless model.respond_to?(:defined_enums)
 
@@ -72,6 +74,14 @@ module SqlChatbot
 
           formatted = values.map { |label, num| "#{label}=#{num}" }.join(", ")
           annotations[table].add("  -- RAILS ENUM: #{column} values: #{formatted}")
+
+          # Detect enum-based soft delete patterns
+          values.each do |label, num|
+            if SOFT_DELETE_LABELS.include?(label.downcase)
+              annotations[table].add("  -- ENUM SOFT DELETE: #{column} != #{num} to exclude #{label.downcase} records (do NOT use deleted_at)")
+              break
+            end
+          end
         end
       end
 
