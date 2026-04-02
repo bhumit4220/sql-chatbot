@@ -349,7 +349,7 @@ RSpec.describe SqlChatbot::Services::SchemaService do
 
       service.relocate_lookup_annotations
 
-      expect(service.summary).to include("FK LOOKUP: category_id (use this to filter by category) values: 1=Tv Shows, 2=Movie")
+      expect(service.summary).to include("FK LOOKUP: category_id values: 1=Tv Shows, 2=Movie")
       expect(service.summary).not_to include("-- VALUES:")
     end
 
@@ -362,7 +362,7 @@ RSpec.describe SqlChatbot::Services::SchemaService do
 
       service.relocate_lookup_annotations
 
-      expect(service.summary).to include("FK LOOKUP: category_id (use this to filter by category) values: 1=Tv Shows, 2=Movie")
+      expect(service.summary).to include("FK LOOKUP: category_id values: 1=Tv Shows, 2=Movie")
       expect(service.summary).not_to include("-- VALUES:")
     end
 
