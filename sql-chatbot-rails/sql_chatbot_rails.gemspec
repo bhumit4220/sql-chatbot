@@ -18,6 +18,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "rails", ">= 6.0"
   spec.add_dependency "ruby-openai", ">= 6.0"
   spec.add_dependency "pg", ">= 1.0"
+  spec.add_dependency "jwt", "~> 2.7"
 
   spec.add_development_dependency "rspec-rails", "~> 6.0"
   spec.add_development_dependency "webmock", "~> 3.0"
