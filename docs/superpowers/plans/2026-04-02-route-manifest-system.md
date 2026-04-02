@@ -505,9 +505,10 @@ end
 describe "#route_list" do
   context "with both manifest and code indexer routes" do
     it "merges and deduplicates routes" do
-      allow(code_indexer).to receive(:get_route_summary).and_return(
-        "Routes detected:\nGET /admin/users -> app/controllers/admin/users_controller.rb\nGET /api/health -> app/controllers/health_controller.rb"
-      )
+      allow(code_indexer).to receive(:get_routes).and_return([
+        { method: "GET", path: "/admin/users", file: "app/controllers/admin/users_controller.rb" },
+        { method: "GET", path: "/api/health", file: "app/controllers/health_controller.rb" },
+      ])
       manifest = {
         "version" => 1,
         "routes" => [
@@ -526,10 +527,10 @@ describe "#route_list" do
   end
 
   context "without manifest" do
-    it "falls back to code indexer route summary" do
-      allow(code_indexer).to receive(:get_route_summary).and_return(
-        "Routes detected:\nGET /admin/users -> controllers/admin/users_controller.rb"
-      )
+    it "falls back to code indexer routes" do
+      allow(code_indexer).to receive(:get_routes).and_return([
+        { method: "GET", path: "/admin/users", file: "controllers/admin/users_controller.rb" },
+      ])
       expect(orchestrator.route_list).to include("/admin/users")
     end
   end
@@ -547,6 +548,11 @@ In `sql-chatbot-rails/lib/sql_chatbot/services/orchestrator.rb`, add after `def 
 
 ```ruby
       def set_manifest(manifest)
+        version = manifest["version"] || manifest[:version]
+        unless version == 1
+          warn "[SqlChatbot] Unsupported manifest version: #{version}"
+          return
+        end
         @manifest = manifest
       end
 
@@ -600,30 +606,7 @@ Add private method `build_route_list` at bottom of private section:
       end
 ```
 
-- [ ] **Step 4: Update handle_navigation to use route_list**
-
-In `orchestrator.rb`, replace the `handle_navigation` method:
-
-```ruby
-      def handle_navigation(yielder, question, type, page_context, history)
-        merged_routes = build_route_list
-        nav_links = merged_routes == "No application routes detected." ? nil : [merged_routes]
-
-        answer_messages = Prompts::Answer.build_messages(
-          question: question,
-          type: type,
-          page_context: page_context,
-          navigation_links: nav_links,
-          history: history
-        )
-
-        @llm.stream(answer_messages) do |chunk|
-          yielder.yield({ type: "token", content: chunk })
-        end
-      end
-```
-
-- [ ] **Step 5: Wire RouteIntrospector into boot sequence**
+- [ ] **Step 4: Wire RouteIntrospector into boot sequence**
 
 In `sql-chatbot-rails/lib/sql_chatbot_rails.rb`, add after the ModelIntrospector block (~line 61) and before the CodeIndexer:
 
@@ -658,7 +641,7 @@ In `sql_chatbot_rails.rb`, update orchestrator creation:
         )
 ```
 
-- [ ] **Step 6: Add require for route_introspector**
+- [ ] **Step 5: Add require for route_introspector**
 
 In `sql-chatbot-rails/lib/sql_chatbot_rails.rb`, add after line 13:
 
@@ -666,17 +649,17 @@ In `sql-chatbot-rails/lib/sql_chatbot_rails.rb`, add after line 13:
 require "sql_chatbot/services/route_introspector"
 ```
 
-- [ ] **Step 7: Run all orchestrator tests**
+- [ ] **Step 6: Run all orchestrator tests**
 
 Run: `cd sql-chatbot-rails && bundle exec rspec spec/sql_chatbot/services/orchestrator_spec.rb -f doc`
 Expected: All tests PASS
 
-- [ ] **Step 8: Run full gem test suite**
+- [ ] **Step 7: Run full gem test suite**
 
 Run: `cd sql-chatbot-rails && bundle exec rspec`
 Expected: All tests PASS (existing + new)
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 cd "Ruby Projects/sql-chatbot"
@@ -715,7 +698,8 @@ In `sql-chatbot-rails/app/controllers/sql_chatbot/chatbot_controller.rb`, add af
 
       manifest = params[:manifest]
       if manifest.present?
-        SqlChatbot.orchestrator.set_manifest(manifest.to_unsafe_h)
+        manifest_data = manifest.respond_to?(:to_unsafe_h) ? manifest.to_unsafe_h : manifest.to_h
+        SqlChatbot.orchestrator.set_manifest(manifest_data)
         render json: { status: "received", routeCount: manifest["routes"]&.length || 0 }
       else
         render json: { error: "manifest is required" }, status: 400
@@ -966,7 +950,7 @@ In `packages/agent/src/services/orchestrator.ts`, add interfaces after the exist
 export interface ManifestRoute {
   path: string;
   method: string;
-  label?: string;
+  label: string;
   component?: string;
   parentPath?: string;
 }
@@ -978,6 +962,8 @@ export interface ManifestFile {
 
 export interface Manifest {
   version: number;
+  generatedAt?: string;
+  framework?: string;
   routes: ManifestRoute[];
   files: ManifestFile[];
 }
@@ -989,6 +975,10 @@ Add to the Orchestrator class:
   private manifest: Manifest | null = null;
 
   setManifest(manifest: Manifest): void {
+    if (manifest.version !== 1) {
+      console.warn('[sql-chatbot] Unsupported manifest version:', manifest.version);
+      return;
+    }
     this.manifest = manifest;
   }
 
@@ -1049,14 +1039,14 @@ Replace the existing `handleNavigationOrGuidance` method:
 ```typescript
   private async *handleNavigationOrGuidance(
     input: AskInput,
-    type: string,
     history: ChatMessage[],
+    type: 'navigation' | 'guidance',
   ): AsyncGenerator<SSEEvent> {
     const routeList = this.buildRouteList();
 
     const answerMessages = buildAnswerMessages({
       question: input.question,
-      type: type as QuestionType,
+      type,
       history,
       pageContext: input.pageContext,
       routeList: routeList !== 'No application routes detected.' ? routeList : undefined,
@@ -1109,10 +1099,11 @@ git commit -m "feat(npm): add manifest support to orchestrator"
 
 - [ ] **Step 1: Add POST /api/manifest endpoint to middleware**
 
-In `packages/agent/src/middleware.ts`, after the `/api/ask` route handler, add:
+In `packages/agent/src/middleware.ts`, after the `/api/ask` route handler, add. **Note:** The manifest can be 1-3MB so we need a higher body limit than the default 100KB:
 
 ```typescript
-  router.post('/api/manifest', async (req, res) => {
+  // Manifest can be large (all frontend files) — allow up to 5MB for this endpoint only
+  router.post('/api/manifest', express.json({ limit: '5mb' }), async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
       await ensureInit();
@@ -1148,6 +1139,8 @@ export interface ClassifyInput {
 In `buildClassifyMessages`, after the pageContext line, add:
 
 ```typescript
+  // Route list helps classifier distinguish navigation ("show me the users page")
+  // from data ("show me the users") — intentionally included for all question types
   if (input.routeList) {
     userContent += `\n\n${input.routeList}`;
   }
@@ -1945,10 +1938,10 @@ export function detectFramework(rootDir: string): DetectedFramework {
   const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
 
   if (allDeps['next']) {
-    // Check for app/ vs pages/ directory
-    if (fs.existsSync(path.join(rootDir, 'app')) || fs.existsSync(path.join(rootDir, 'src', 'app'))) {
-      return 'next-app';
-    }
+    const hasAppDir = fs.existsSync(path.join(rootDir, 'app')) || fs.existsSync(path.join(rootDir, 'src', 'app'));
+    const hasPagesDir = fs.existsSync(path.join(rootDir, 'pages')) || fs.existsSync(path.join(rootDir, 'src', 'pages'));
+    // Prefer app router; scanRoutes will scan both if both exist
+    if (hasAppDir) return 'next-app';
     return 'next-pages';
   }
 
@@ -1966,7 +1959,21 @@ export function scanRoutes(rootDir: string, framework: DetectedFramework): Manif
       const appDir = fs.existsSync(path.join(rootDir, 'app'))
         ? path.join(rootDir, 'app')
         : path.join(rootDir, 'src', 'app');
-      return scanNextAppRoutes(appDir);
+      const routes = scanNextAppRoutes(appDir);
+      // Also scan pages/ if it exists (migration period — both routers active)
+      const pagesDir = fs.existsSync(path.join(rootDir, 'pages'))
+        ? path.join(rootDir, 'pages')
+        : fs.existsSync(path.join(rootDir, 'src', 'pages'))
+          ? path.join(rootDir, 'src', 'pages')
+          : null;
+      if (pagesDir) {
+        const pageRoutes = scanNextPagesRoutes(pagesDir);
+        const seen = new Set(routes.map(r => r.path));
+        for (const r of pageRoutes) {
+          if (!seen.has(r.path)) routes.push(r);
+        }
+      }
+      return routes;
     }
     case 'next-pages': {
       const pagesDir = fs.existsSync(path.join(rootDir, 'pages'))
@@ -2230,6 +2237,8 @@ git commit -m "feat(manifest): add framework detection and filesystem router sca
 ```
 
 ---
+
+> **Note:** Tasks 10-12 duplicate `deriveLabel`, `humanize`, `deriveParent`, and `findClosingBracket` helpers across framework files. Extract into a shared `src/utils.ts` during Task 14 cleanup if desired — not blocking.
 
 ### Task 11: React Router Scanner (regex-based)
 
@@ -2870,19 +2879,18 @@ export function sqlChatbotManifest(options?: PluginOptions) {
 
     configureServer(server: { watcher: { on: (event: string, cb: (file: string) => void) => void } }) {
       // Watch mode: regenerate manifest when source files change
-      server.watcher.on('change', (file: string) => {
-        const ext = path.extname(file);
-        if (['.tsx', '.ts', '.jsx', '.js', '.vue', '.svelte'].includes(ext)) {
-          generateManifest(rootDir, outputPath, options);
-        }
-      });
+      // Debounce to avoid repeated regeneration during rapid saves
+      let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-      server.watcher.on('add', (file: string) => {
+      function scheduleRegenerate(file: string) {
         const ext = path.extname(file);
-        if (['.tsx', '.ts', '.jsx', '.js', '.vue', '.svelte'].includes(ext)) {
-          generateManifest(rootDir, outputPath, options);
-        }
-      });
+        if (!['.tsx', '.ts', '.jsx', '.js', '.vue', '.svelte'].includes(ext)) return;
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => generateManifest(rootDir, outputPath, options), 500);
+      }
+
+      server.watcher.on('change', scheduleRegenerate);
+      server.watcher.on('add', scheduleRegenerate);
     },
   };
 }
@@ -3146,6 +3154,9 @@ Expected: All tests PASS across all 3 packages
 - [ ] **Step 7: Commit any integration fixes**
 
 ```bash
-git add -A
-git commit -m "test: E2E integration validation for manifest system"
+# Only add specific integration fix files — review what changed before staging
+git status
+# Stage only the relevant fixes, e.g.:
+# git add packages/agent/src/... sql-chatbot-rails/lib/...
+git commit -m "fix: integration fixes for manifest system E2E testing"
 ```
