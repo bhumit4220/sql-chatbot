@@ -73,6 +73,43 @@ module SqlChatbot
         @tables.length
       end
 
+      # Scan FK LOOKUP annotations for values that match words in the question.
+      # Returns array of hint strings like:
+      #   "The user mentions 'movies'. In the titles table, use WHERE category_id = 2 (Movie)."
+      def find_lookup_hints(question)
+        return [] if @summary_text.empty?
+
+        words = question.downcase.split(/\W+/).reject(&:empty?)
+        hints = []
+        current_table = nil
+
+        @summary_text.split("\n").each do |line|
+          if line.start_with?("TABLE ")
+            current_table = line.match(/^TABLE (\S+)/)[1]
+          elsif line.include?("FK LOOKUP:") && current_table
+            # Parse: "  -- FK LOOKUP: category_id values: 1=Tv Shows, 2=Movie, 3=Action"
+            match = line.match(/FK LOOKUP:\s+(\S+).*?values:\s+(.+)/)
+            next unless match
+
+            fk_col = match[1]
+            pairs = match[2].split(",").map(&:strip)
+            pairs.each do |pair|
+              id, name = pair.split("=", 2)
+              next unless name
+
+              # Check if any word in the question matches this lookup value
+              name_words = name.strip.downcase.split(/\W+/)
+              matched_word = words.find { |w| name_words.include?(w) || name.strip.downcase == w || name.strip.downcase.start_with?(w) || w.start_with?(name.strip.downcase) }
+              if matched_word
+                hints << "The user mentions \"#{matched_word}\". In the #{current_table} table, use WHERE #{fk_col} = #{id.strip} (#{name.strip})."
+              end
+            end
+          end
+        end
+
+        hints.uniq
+      end
+
       # Inject model-level annotations (from ModelIntrospector) into the schema summary.
       # annotations_by_table: Hash of table_name => [annotation_strings]
       # Each annotation is inserted after the TABLE line and any existing annotations.

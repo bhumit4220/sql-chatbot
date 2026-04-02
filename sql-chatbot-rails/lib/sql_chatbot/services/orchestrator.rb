@@ -79,11 +79,15 @@ module SqlChatbot
 
         question_type = code_context.empty? ? "data" : "data_with_code"
 
+        # Find lookup hints matching the question
+        lookup_hints = @schema.find_lookup_hints(question)
+
         # Generate SQL
         gen_messages = Prompts::GenerateSql.build_messages(
           question: question,
           schema: schema_summary,
           code_context: code_context.empty? ? nil : code_context,
+          lookup_hints: lookup_hints.empty? ? nil : lookup_hints,
           history: history
         )
         raw_sql = @llm.call(gen_messages, json_mode: true)

@@ -31,7 +31,7 @@ module SqlChatbot
         Respond with JSON only: {"sql": "<the SQL query>", "explanation": "<brief explanation of what the query does>"}
       PROMPT
 
-      def self.build_messages(question:, schema:, code_context: nil, history: [])
+      def self.build_messages(question:, schema:, code_context: nil, lookup_hints: nil, history: [])
         system = SYSTEM_PROMPT.dup
         if code_context && !code_context.empty?
           system += "\n\nRELEVANT CODE CONTEXT (use this to understand business logic, calculations, or field meanings):\n#{code_context}"
@@ -44,6 +44,14 @@ module SqlChatbot
         end
 
         user_content = ""
+
+        # Inject lookup hints before the question so the LLM sees them first
+        if lookup_hints && !lookup_hints.empty?
+          user_content += "IMPORTANT LOOKUP HINTS (use these exact columns and IDs):\n"
+          lookup_hints.each { |hint| user_content += "- #{hint}\n" }
+          user_content += "\n"
+        end
+
         if history && !history.empty?
           recent = history.last(4)
           history_text = recent.map { |m| "#{m[:role]}: #{m[:content]}" }.join("\n")

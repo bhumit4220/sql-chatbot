@@ -8,7 +8,7 @@ require "sql_chatbot/services/orchestrator"
 
 RSpec.describe SqlChatbot::Services::Orchestrator do
   let(:llm_client) { instance_double(SqlChatbot::LLM::Client) }
-  let(:schema_service) { instance_double(SqlChatbot::Services::SchemaService, summary: "TABLE users (id INT, name VARCHAR)") }
+  let(:schema_service) { instance_double(SqlChatbot::Services::SchemaService, summary: "TABLE users (id INT, name VARCHAR)", find_lookup_hints: []) }
   let(:code_indexer) { instance_double(SqlChatbot::Services::CodeIndexer, search: [], get_route_summary: "") }
   let(:orchestrator) { described_class.new(llm_client: llm_client, schema_service: schema_service, code_indexer: code_indexer) }
 
