@@ -5,21 +5,31 @@ require "set"
 module SqlChatbot
   module Services
     class ModelIntrospector
-      # Returns Hash of table_name => [annotation_strings]
-      # Annotations match the schema summary format: "  -- TYPE: details"
+      IntrospectionResult = Struct.new(:annotations, :soft_delete_tables, :enum_soft_delete_tables, keyword_init: true)
+
+      # Returns IntrospectionResult with:
+      #   annotations          — Hash[table_name => [annotation_strings]]
+      #   soft_delete_tables   — Set of tables using Paranoia/Discard gems
+      #   enum_soft_delete_tables — Set of tables with enum deleted/archived values
       def introspect
         annotations = Hash.new { |h, k| h[k] = Set.new }
+        soft_delete_tables = Set.new
+        enum_soft_delete_tables = Set.new
 
         models = discover_models
         models.each do |model|
           table = model.table_name
 
-          detect_enums(model, table, annotations)
+          detect_enums(model, table, annotations, enum_soft_delete_tables)
           detect_associations(model, table, annotations)
+          detect_soft_delete_gem(model, table, soft_delete_tables)
         end
 
-        # Convert Sets to Arrays (deduplication handles STI)
-        annotations.transform_values(&:to_a)
+        IntrospectionResult.new(
+          annotations: annotations.transform_values(&:to_a),
+          soft_delete_tables: soft_delete_tables,
+          enum_soft_delete_tables: enum_soft_delete_tables
+        )
       end
 
       private
@@ -65,8 +75,9 @@ module SqlChatbot
       end
 
       SOFT_DELETE_LABELS = %w[deleted archived removed discarded].freeze
+      SOFT_DELETE_GEMS = ["Paranoia", "Discard::Model"].freeze
 
-      def detect_enums(model, table, annotations)
+      def detect_enums(model, table, annotations, enum_soft_delete_tables)
         return unless model.respond_to?(:defined_enums)
 
         model.defined_enums.each do |column, values|
@@ -79,9 +90,28 @@ module SqlChatbot
           values.each do |label, num|
             if SOFT_DELETE_LABELS.include?(label.downcase)
               annotations[table].add("  -- ENUM SOFT DELETE: #{column} != #{num} to exclude #{label.downcase} records (do NOT use deleted_at)")
+              enum_soft_delete_tables.add(table)
               break
             end
           end
+        end
+      end
+
+      def detect_soft_delete_gem(model, table, soft_delete_tables)
+        SOFT_DELETE_GEMS.each do |gem_module_name|
+          begin
+            mod = Object.const_get(gem_module_name)
+            if model.ancestors.include?(mod)
+              soft_delete_tables.add(table)
+              return
+            end
+          rescue NameError
+            # Gem not installed, skip
+          end
+        end
+
+        if model.respond_to?(:acts_as_paranoid?) && model.acts_as_paranoid?
+          soft_delete_tables.add(table)
         end
       end
 

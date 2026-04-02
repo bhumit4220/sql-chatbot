@@ -43,10 +43,10 @@ module SqlChatbot
         @schema_service = Services::SchemaService.new
         @schema_service.discover
 
-        # Introspect Rails models for enums and non-standard FKs
+        # Introspect Rails models for enums, non-standard FKs, and soft delete gems
         introspector = Services::ModelIntrospector.new
-        model_annotations = introspector.introspect
-        @schema_service.append_model_annotations(model_annotations)
+        introspection = introspector.introspect
+        @schema_service.append_model_annotations(introspection.annotations)
 
         @code_indexer = Services::CodeIndexer.new
         @code_indexer.index(cfg.code_paths)

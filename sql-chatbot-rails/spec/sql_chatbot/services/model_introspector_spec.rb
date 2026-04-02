@@ -35,8 +35,11 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
     context "when ActiveRecord is not defined" do
       before { hide_const("ActiveRecord::Base") if defined?(ActiveRecord::Base) }
 
-      it "returns empty hash" do
-        expect(introspector.introspect).to eq({})
+      it "returns empty result" do
+        result = introspector.introspect
+        expect(result.annotations).to eq({})
+        expect(result.soft_delete_tables).to be_empty
+        expect(result.enum_soft_delete_tables).to be_empty
       end
     end
 
@@ -47,8 +50,9 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
         })
       end
 
-      it "returns empty hash" do
-        expect(introspector.introspect).to eq({})
+      it "returns empty result" do
+        result = introspector.introspect
+        expect(result.annotations).to eq({})
       end
     end
 
@@ -69,8 +73,8 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
 
       it "detects enum and returns annotation" do
         result = introspector.introspect
-        expect(result).to have_key("jobs")
-        expect(result["jobs"]).to include(
+        expect(result.annotations).to have_key("jobs")
+        expect(result.annotations["jobs"]).to include(
           a_string_matching(/RAILS ENUM: status values: Active=1, Pending=2, Deleted=3/)
         )
       end
@@ -96,9 +100,9 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
 
       it "detects all enums" do
         result = introspector.introspect
-        expect(result["jobs"].length).to eq(2)
-        expect(result["jobs"]).to include(a_string_matching(/status values:/))
-        expect(result["jobs"]).to include(a_string_matching(/priority values:/))
+        expect(result.annotations["jobs"].length).to eq(2)
+        expect(result.annotations["jobs"]).to include(a_string_matching(/status values:/))
+        expect(result.annotations["jobs"]).to include(a_string_matching(/priority values:/))
       end
     end
 
@@ -119,7 +123,7 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
 
       it "detects non-standard FK" do
         result = introspector.introspect
-        expect(result["jobs"]).to include(
+        expect(result.annotations["jobs"]).to include(
           a_string_matching(/MODEL FK: created_by -> .+\.id/)
         )
       end
@@ -142,7 +146,7 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
 
       it "detects custom class name" do
         result = introspector.introspect
-        expect(result["posts"]).to include(
+        expect(result.annotations["posts"]).to include(
           a_string_matching(/MODEL FK: author_id -> .+\.id/)
         )
       end
@@ -165,7 +169,7 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
 
       it "skips standard associations" do
         result = introspector.introspect
-        expect(result).to be_empty
+        expect(result.annotations).to be_empty
       end
     end
 
@@ -186,7 +190,7 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
 
       it "skips polymorphic associations (already detected by schema_service)" do
         result = introspector.introspect
-        expect(result).to be_empty
+        expect(result.annotations).to be_empty
       end
     end
 
@@ -207,7 +211,7 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
       end
 
       it "skips abstract models" do
-        expect(introspector.introspect).to be_empty
+        expect(introspector.introspect.annotations).to be_empty
       end
     end
 
@@ -226,7 +230,7 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
       end
 
       it "skips the model gracefully" do
-        expect(introspector.introspect).to be_empty
+        expect(introspector.introspect.annotations).to be_empty
       end
     end
 
@@ -253,7 +257,7 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
 
       it "deduplicates annotations for the same table" do
         result = introspector.introspect
-        expect(result["animals"].length).to eq(1)
+        expect(result.annotations["animals"].length).to eq(1)
       end
     end
 
@@ -274,7 +278,7 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
 
       it "adds ENUM SOFT DELETE annotation" do
         result = introspector.introspect
-        expect(result["jobs"]).to include(
+        expect(result.annotations["jobs"]).to include(
           a_string_matching(/ENUM SOFT DELETE: status != 3 to exclude deleted records/)
         )
       end
@@ -297,7 +301,7 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
 
       it "adds ENUM SOFT DELETE annotation for archived" do
         result = introspector.introspect
-        expect(result["posts"]).to include(
+        expect(result.annotations["posts"]).to include(
           a_string_matching(/ENUM SOFT DELETE: state != 2 to exclude archived records/)
         )
       end
@@ -320,8 +324,113 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
 
       it "does not add ENUM SOFT DELETE annotation" do
         result = introspector.introspect
-        annotations = result["jobs"] || []
+        annotations = result.annotations["jobs"] || []
         expect(annotations.none? { |a| a.include?("ENUM SOFT DELETE") }).to be true
+      end
+    end
+
+    context "with model using Paranoia gem" do
+      let(:model) do
+        klass = fake_model(
+          table_name: "posts",
+          enums: { "status" => { "Active" => 1, "Deleted" => 3 } }
+        )
+        paranoia_module = Module.new
+        stub_const("Paranoia", paranoia_module)
+        klass.include(paranoia_module)
+        klass
+      end
+
+      before do
+        stub_const("ActiveRecord::Base", Class.new {
+          define_singleton_method(:descendants) { [] }
+        })
+        allow(ActiveRecord::Base).to receive(:descendants).and_return([model])
+      end
+
+      it "includes table in soft_delete_tables" do
+        result = introspector.introspect
+        expect(result.soft_delete_tables).to include("posts")
+      end
+
+      it "still detects enum soft delete" do
+        result = introspector.introspect
+        expect(result.annotations["posts"]).to include(
+          a_string_matching(/ENUM SOFT DELETE/)
+        )
+      end
+    end
+
+    context "with model using Discard gem" do
+      let(:model) do
+        klass = fake_model(
+          table_name: "comments",
+          enums: {}
+        )
+        discard_module = Module.new
+        stub_const("Discard::Model", discard_module)
+        klass.include(discard_module)
+        klass
+      end
+
+      before do
+        stub_const("ActiveRecord::Base", Class.new {
+          define_singleton_method(:descendants) { [] }
+        })
+        allow(ActiveRecord::Base).to receive(:descendants).and_return([model])
+      end
+
+      it "includes table in soft_delete_tables" do
+        result = introspector.introspect
+        expect(result.soft_delete_tables).to include("comments")
+      end
+    end
+
+    context "with model without soft delete gem but with enum Deleted" do
+      let(:model) do
+        fake_model(
+          table_name: "jobs",
+          enums: { "status" => { "Active" => 1, "Deleted" => 3 } }
+        )
+      end
+
+      before do
+        stub_const("ActiveRecord::Base", Class.new {
+          define_singleton_method(:descendants) { [] }
+        })
+        allow(ActiveRecord::Base).to receive(:descendants).and_return([model])
+      end
+
+      it "includes table in enum_soft_delete_tables" do
+        result = introspector.introspect
+        expect(result.enum_soft_delete_tables).to include("jobs")
+      end
+
+      it "does not include table in soft_delete_tables" do
+        result = introspector.introspect
+        expect(result.soft_delete_tables).not_to include("jobs")
+      end
+    end
+
+    context "with model without any soft delete mechanism" do
+      let(:model) do
+        fake_model(
+          table_name: "settings",
+          enums: { "priority" => { "Low" => 0, "High" => 1 } }
+        )
+      end
+
+      before do
+        stub_const("ActiveRecord::Base", Class.new {
+          define_singleton_method(:descendants) { [] }
+        })
+        allow(ActiveRecord::Base).to receive(:descendants).and_return([model])
+      end
+
+      it "does not include table in either set" do
+        result = introspector.introspect
+        expect(result.soft_delete_tables).not_to include("settings")
+        expect(result.enum_soft_delete_tables).not_to include("settings")
       end
     end
 
@@ -346,10 +455,10 @@ RSpec.describe SqlChatbot::Services::ModelIntrospector do
 
       it "returns enum, soft delete, and FK annotations" do
         result = introspector.introspect
-        expect(result["jobs"].length).to eq(3)
-        expect(result["jobs"]).to include(a_string_matching(/RAILS ENUM/))
-        expect(result["jobs"]).to include(a_string_matching(/ENUM SOFT DELETE/))
-        expect(result["jobs"]).to include(a_string_matching(/MODEL FK/))
+        expect(result.annotations["jobs"].length).to eq(3)
+        expect(result.annotations["jobs"]).to include(a_string_matching(/RAILS ENUM/))
+        expect(result.annotations["jobs"]).to include(a_string_matching(/ENUM SOFT DELETE/))
+        expect(result.annotations["jobs"]).to include(a_string_matching(/MODEL FK/))
       end
     end
   end
