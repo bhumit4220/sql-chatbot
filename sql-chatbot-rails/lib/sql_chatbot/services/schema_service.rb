@@ -297,7 +297,7 @@ module SqlChatbot
             # Match explicit FK references: "column_name INT FK=>target_table.target_column"
             lookup_values.each do |lookup_table, values|
               line.scan(/(\w+)\s+\w+\s+FK=>#{Regexp.escape(lookup_table)}\.(\w+)/).each do |fk_col, _target_col|
-                result << "  -- FK LOOKUP: #{fk_col} values: #{values}"
+                result << "  -- FK LOOKUP: #{fk_col} (use this to filter by #{fk_col.chomp('_id')}) values: #{values}"
               end
             end
 
@@ -306,7 +306,7 @@ module SqlChatbot
               # Skip if already matched by explicit FK above
               next if line.include?("#{fk_col_name} ") && line.include?("FK=>#{lookup_table}")
               if line.match?(/\b#{Regexp.escape(fk_col_name)}\s+\w+(?!\s+FK)/)
-                result << "  -- FK LOOKUP: #{fk_col_name} values: #{lookup_values[lookup_table]}"
+                result << "  -- FK LOOKUP: #{fk_col_name} (use this to filter by #{fk_col_name.chomp('_id')}) values: #{lookup_values[lookup_table]}"
               end
             end
           end
