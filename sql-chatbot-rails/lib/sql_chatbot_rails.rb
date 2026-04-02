@@ -12,6 +12,7 @@ require "sql_chatbot/services/code_indexer"
 require "sql_chatbot/services/orchestrator"
 require "sql_chatbot/services/model_introspector"
 require "sql_chatbot/auth/jwt"
+require "sql_chatbot/auth/cors"
 require "sql_chatbot/engine" if defined?(Rails)
 
 module SqlChatbot

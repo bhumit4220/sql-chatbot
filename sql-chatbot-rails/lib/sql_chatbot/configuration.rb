@@ -10,11 +10,20 @@ module SqlChatbot
     }.freeze
 
     attr_accessor :llm_api_key, :llm_provider, :llm_model, :llm_base_url,
-                  :secret, :code_paths, :custom_context
+                  :secret, :code_paths, :custom_context,
+                  :allowed_origins,  # Array of allowed cross-origin domains
+                  :token_lifetime,   # JWT lifetime in seconds (default: 900)
+                  :token_secret      # JWT signing secret (auto-generated if nil)
 
     def initialize
       @llm_provider = "openrouter"
       @code_paths = ["./app"]
+      @token_lifetime = 900
+      @_resolved_token_secret = nil
+    end
+
+    def resolved_token_secret
+      @_resolved_token_secret ||= (@token_secret || ENV["CHATBOT_TOKEN_SECRET"] || SecureRandom.hex(32))
     end
 
     def resolved_base_url

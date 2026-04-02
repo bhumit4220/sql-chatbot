@@ -193,6 +193,103 @@ RSpec.describe "SqlChatbot Engine", type: :request do
   end
 
   # ---------------------------------------------------------------------------
+  # Session endpoint
+  # ---------------------------------------------------------------------------
+  describe "POST /chatbot/api/session" do
+    before do
+      SqlChatbot.configure do |c|
+        c.secret = "test-secret"
+      end
+      allow(SqlChatbot).to receive(:ensure_initialized!)
+    end
+
+    after { SqlChatbot.reset! }
+
+    it "returns JWT when authorized via Bearer secret" do
+      post "/chatbot/api/session", headers: { "Authorization" => "Bearer test-secret" }
+      expect(response).to have_http_status(:ok)
+      body = JSON.parse(response.body)
+      expect(body["token"]).to be_present
+      expect(body["token"].split(".").length).to eq(3)
+      expect(body["expires_in"]).to eq(900)
+    end
+
+    it "returns 401 when unauthorized" do
+      post "/chatbot/api/session"
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "returns 401 when wrong secret" do
+      post "/chatbot/api/session", headers: { "Authorization" => "Bearer wrong" }
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "returns 403 when origin not allowed" do
+      SqlChatbot.config.allowed_origins = ["https://admin.myapp.com"]
+      post "/chatbot/api/session",
+        headers: { "Authorization" => "Bearer test-secret", "Origin" => "https://evil.com" }
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it "returns JWT when origin is allowed" do
+      SqlChatbot.config.allowed_origins = ["https://admin.myapp.com"]
+      post "/chatbot/api/session",
+        headers: { "Authorization" => "Bearer test-secret", "Origin" => "https://admin.myapp.com" }
+      expect(response).to have_http_status(:ok)
+      body = JSON.parse(response.body)
+      expect(body["token"]).to be_present
+    end
+
+    it "accepts JWT token on /api/ask" do
+      # Get a token
+      post "/chatbot/api/session", headers: { "Authorization" => "Bearer test-secret" }
+      token = JSON.parse(response.body)["token"]
+
+      # Mock orchestrator for the ask request
+      events = [{ type: "done" }]
+      orchestrator = double("orchestrator", handle_question: events)
+      SqlChatbot.orchestrator = orchestrator
+
+      # Use JWT on /api/ask
+      post "/chatbot/api/ask",
+        params: { question: "test" },
+        headers: { "Authorization" => "Bearer #{token}" }
+      expect(response).not_to have_http_status(:unauthorized)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # CORS headers
+  # ---------------------------------------------------------------------------
+  describe "CORS headers" do
+    before do
+      SqlChatbot.configure do |c|
+        c.allowed_origins = ["https://admin.myapp.com"]
+      end
+      allow(SqlChatbot).to receive(:ensure_initialized!)
+    end
+
+    after { SqlChatbot.reset! }
+
+    it "sets CORS headers for allowed origin" do
+      get "/chatbot/api/health", headers: { "Origin" => "https://admin.myapp.com" }
+      expect(response.headers["Access-Control-Allow-Origin"]).to eq("https://admin.myapp.com")
+    end
+
+    it "does not set CORS headers for disallowed origin" do
+      get "/chatbot/api/health", headers: { "Origin" => "https://evil.com" }
+      expect(response.headers["Access-Control-Allow-Origin"]).to be_nil
+    end
+
+    it "handles OPTIONS preflight" do
+      process :options, "/chatbot/api/ask",
+        headers: { "Origin" => "https://admin.myapp.com", "Access-Control-Request-Method" => "POST" }
+      expect(response).to have_http_status(:no_content)
+      expect(response.headers["Access-Control-Allow-Origin"]).to eq("https://admin.myapp.com")
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Refresh endpoint
   # ---------------------------------------------------------------------------
   describe "POST /chatbot/api/refresh" do

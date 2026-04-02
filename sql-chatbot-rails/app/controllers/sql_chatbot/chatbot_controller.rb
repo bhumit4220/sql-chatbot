@@ -4,6 +4,7 @@ module SqlChatbot
   class ChatbotController < ActionController::Base
     include ActionController::Live
     skip_forgery_protection
+    before_action :handle_cors
 
     def widget
       if SqlChatbot.config&.secret
@@ -64,21 +65,74 @@ module SqlChatbot
       render json: { status: "error", message: e.message }, status: 500
     end
 
+    def session
+      origin = request.headers["Origin"]
+
+      # Validate origin
+      allowed_origins = SqlChatbot.config&.allowed_origins
+      if origin && !Auth::Cors.origin_allowed?(origin, allowed_origins)
+        return render json: { error: "Origin not allowed" }, status: 403
+      end
+
+      # Check auth
+      unless authorized?
+        return render_unauthorized
+      end
+
+      config = SqlChatbot.config
+      token = Auth::Jwt.generate_token(
+        secret: config.resolved_token_secret,
+        origin: origin,
+        lifetime_seconds: config.token_lifetime
+      )
+
+      render json: { token: token, expires_in: config.token_lifetime }
+    end
+
+    def preflight
+      head :no_content
+    end
+
     private
 
     def authorized?
       return true unless SqlChatbot.config&.secret
+
       auth_header = request.headers["Authorization"]
       if auth_header
         scheme, token = auth_header.split(" ", 2)
-        return true if scheme == "Bearer" && token == SqlChatbot.config.secret
+        if scheme == "Bearer" && token
+          # Try JWT verification first
+          begin
+            Auth::Jwt.verify_token(token: token, secret: SqlChatbot.config.resolved_token_secret)
+            return true
+          rescue Auth::Jwt::TokenExpired, Auth::Jwt::TokenInvalid
+            # Not a JWT, try secret match
+          end
+
+          # Try secret match (existing behavior)
+          return true if token == SqlChatbot.config.secret
+        end
       end
+
+      # Check cookie (existing behavior)
       return true if cookies[:chatbot_token] == SqlChatbot.config.secret
+
       false
     end
 
     def render_unauthorized
       render json: { error: "Unauthorized" }, status: 401
+    end
+
+    def handle_cors
+      origin = request.headers["Origin"]
+      return unless origin
+
+      allowed_origins = SqlChatbot.config&.allowed_origins
+      if Auth::Cors.origin_allowed?(origin, allowed_origins)
+        Auth::Cors.set_headers(response, origin)
+      end
     end
 
     def ensure_initialized!
