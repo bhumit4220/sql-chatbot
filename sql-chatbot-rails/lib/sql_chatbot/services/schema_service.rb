@@ -206,9 +206,10 @@ module SqlChatbot
             col_parts << part
             col_name_types[col["column_name"]] = mapped_type
 
-            # Soft delete annotation
+            # Defer soft delete annotation (applied after model introspection)
             if SOFT_DELETE_COLUMNS.include?(col["column_name"])
-              annotations << "  -- SOFT DELETE: filter #{col['column_name']} IS NULL for active records"
+              (@deferred_soft_deletes ||= {})[table] ||= []
+              @deferred_soft_deletes[table] << col["column_name"]
             end
 
             # Enum value annotation
@@ -245,6 +246,34 @@ module SqlChatbot
       # Re-discover schema (alias for discover)
       def refresh
         discover
+      end
+
+      # Apply soft delete annotations conditionally based on model introspection results.
+      # - Tables using a soft delete gem (paranoia, discard): always add SOFT DELETE annotation
+      # - Tables with enum soft delete but no gem: suppress SOFT DELETE (enum is the real mechanism)
+      # - Tables with neither: add SOFT DELETE annotation (assume column is used)
+      def apply_soft_delete_annotations(soft_delete_tables:, enum_soft_delete_tables:)
+        return if @deferred_soft_deletes.nil? || @deferred_soft_deletes.empty?
+
+        new_annotations = {}
+        @deferred_soft_deletes.each do |table, columns|
+          if soft_delete_tables.include?(table)
+            # Gem manages this column — keep the annotation
+            columns.each do |col|
+              (new_annotations[table] ||= []) << "  -- SOFT DELETE: filter #{col} IS NULL for active records"
+            end
+          elsif enum_soft_delete_tables.include?(table)
+            # Enum is the real soft delete, column is likely unused — suppress
+            next
+          else
+            # No competing mechanism — assume column is used
+            columns.each do |col|
+              (new_annotations[table] ||= []) << "  -- SOFT DELETE: filter #{col} IS NULL for active records"
+            end
+          end
+        end
+
+        append_model_annotations(new_annotations) unless new_annotations.empty?
       end
 
       private

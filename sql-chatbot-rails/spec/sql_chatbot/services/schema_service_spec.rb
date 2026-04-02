@@ -333,4 +333,69 @@ RSpec.describe SqlChatbot::Services::SchemaService do
       expect(service.summary).to eq(original)
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # #apply_soft_delete_annotations
+  # ---------------------------------------------------------------------------
+  describe "#apply_soft_delete_annotations" do
+    let(:service) { described_class.new }
+
+    before do
+      service.instance_variable_set(:@summary_text, [
+        "TABLE customers (id INT PK, name VARCHAR, status INT, deleted_at TIMESTAMP)",
+        "TABLE posts (id INT PK, title VARCHAR, discarded_at TIMESTAMP)",
+        "TABLE settings (id INT PK, key VARCHAR, deleted_at TIMESTAMP)",
+      ].join("\n"))
+      service.instance_variable_set(:@deferred_soft_deletes, {
+        "customers" => ["deleted_at"],
+        "posts" => ["discarded_at"],
+        "settings" => ["deleted_at"],
+      })
+    end
+
+    it "adds SOFT DELETE for tables with soft delete gem" do
+      service.apply_soft_delete_annotations(
+        soft_delete_tables: Set.new(["posts"]),
+        enum_soft_delete_tables: Set.new
+      )
+      expect(service.summary).to include("SOFT DELETE: filter discarded_at IS NULL")
+    end
+
+    it "suppresses SOFT DELETE for tables with enum soft delete and no gem" do
+      service.apply_soft_delete_annotations(
+        soft_delete_tables: Set.new,
+        enum_soft_delete_tables: Set.new(["customers"])
+      )
+      # customers should NOT have SOFT DELETE
+      lines = service.summary.split("\n")
+      customer_section = lines.select { |l| l.include?("customers") || (l.strip.start_with?("--") && lines.index(l) > 0 && lines[lines.index(l) - 1].include?("customers")) }
+      expect(customer_section.join).not_to include("SOFT DELETE")
+    end
+
+    it "adds SOFT DELETE for tables with neither gem nor enum soft delete" do
+      service.apply_soft_delete_annotations(
+        soft_delete_tables: Set.new,
+        enum_soft_delete_tables: Set.new
+      )
+      expect(service.summary).to include("SOFT DELETE: filter deleted_at IS NULL")
+    end
+
+    it "adds SOFT DELETE when table has both gem and enum soft delete (gem wins)" do
+      service.apply_soft_delete_annotations(
+        soft_delete_tables: Set.new(["customers"]),
+        enum_soft_delete_tables: Set.new(["customers"])
+      )
+      expect(service.summary).to include("SOFT DELETE: filter deleted_at IS NULL")
+    end
+
+    it "does nothing when no deferred soft deletes exist" do
+      service.instance_variable_set(:@deferred_soft_deletes, nil)
+      original = service.summary.dup
+      service.apply_soft_delete_annotations(
+        soft_delete_tables: Set.new,
+        enum_soft_delete_tables: Set.new
+      )
+      expect(service.summary).to eq(original)
+    end
+  end
 end
