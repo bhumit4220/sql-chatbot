@@ -46,7 +46,18 @@ module SqlChatbot
         # Introspect Rails models for enums, non-standard FKs, and soft delete gems
         introspector = Services::ModelIntrospector.new
         introspection = introspector.introspect
+
+        # Apply soft delete annotations conditionally (gem-based vs enum-based)
+        @schema_service.apply_soft_delete_annotations(
+          soft_delete_tables: introspection.soft_delete_tables,
+          enum_soft_delete_tables: introspection.enum_soft_delete_tables,
+        )
+
+        # Inject model annotations (enums, FKs)
         @schema_service.append_model_annotations(introspection.annotations)
+
+        # Move lookup values from referenced tables to FK columns
+        @schema_service.relocate_lookup_annotations
 
         @code_indexer = Services::CodeIndexer.new
         @code_indexer.index(cfg.code_paths)

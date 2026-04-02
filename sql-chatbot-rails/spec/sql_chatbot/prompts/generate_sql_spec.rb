@@ -32,6 +32,13 @@ RSpec.describe SqlChatbot::Prompts::GenerateSql do
       expect(system).to include("NUMERIC value")
     end
 
+    it "includes rule 16 about FK LOOKUP values" do
+      messages = described_class.build_messages(question: "test", schema: "")
+      system = messages.first[:content]
+      expect(system).to include("FK LOOKUP VALUES")
+      expect(system).to include("FK LOOKUP: category_id")
+    end
+
     it "includes rule 19 about MODEL FK joins" do
       messages = described_class.build_messages(question: "test", schema: "TABLE t (id INT)")
       system = messages.first[:content]
