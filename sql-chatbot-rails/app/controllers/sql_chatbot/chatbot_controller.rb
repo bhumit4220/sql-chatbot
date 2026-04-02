@@ -65,7 +65,7 @@ module SqlChatbot
       render json: { status: "error", message: e.message }, status: 500
     end
 
-    def session
+    def create_session
       origin = request.headers["Origin"]
 
       # Validate origin
