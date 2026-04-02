@@ -1,23 +1,22 @@
 SqlChatbot.configure do |c|
-  # LLM provider: "openai", "openrouter" (default), "groq", "ollama"
+  # LLM provider: "openrouter" (default, free), "openai", "groq", "ollama"
   c.llm_provider = "openrouter"
-
-  # API key (or set OPENROUTER_API_KEY / OPENAI_API_KEY env var)
   c.llm_api_key = ENV["OPENROUTER_API_KEY"]
 
-  # Optional: override model (defaults per provider)
+  # Optional: override model or base URL
   # c.llm_model = "gpt-4o-mini"
+  # c.llm_base_url = "https://api.openai.com/v1"
 
-  # Optional: auth secret (enables cookie-based auth for widget)
+  # Optional: restrict chatbot access (Bearer token or cookie)
   # c.secret = ENV["CHATBOT_SECRET"]
 
-  # Code paths to index (defaults to ["./app"])
-  # c.code_paths = ["./app", "./lib"]
+  # Optional: domain-specific context for better SQL generation
+  # c.custom_context = "status=3 means Deleted, always exclude deleted records"
 
-  # Optional: inject domain-specific context into SQL generation prompts
-  # Use this for non-standard FK names, soft-delete conventions, etc.
-  # c.custom_context = <<~CONTEXT
-  #   jobs.created_by is FK to customers.id (not customer_id)
-  #   status=3 means deleted across all tables
-  # CONTEXT
+  # Cross-origin support (for distributed frontend/backend setups):
+  # c.allowed_origins = ["https://your-frontend-domain.com"]
+  # c.token_lifetime = 900  # JWT lifetime in seconds (default: 15 minutes)
+
+  # Code paths to index (default: ["./app"])
+  # c.code_paths = ["./app", "./lib"]
 end
