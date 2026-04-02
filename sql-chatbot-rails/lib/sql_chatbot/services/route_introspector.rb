@@ -8,16 +8,6 @@ module SqlChatbot
         sql_chatbot/
       ].freeze
 
-      ACTION_LABELS = {
-        "index"   => nil,
-        "show"    => "Detail",
-        "new"     => "New",
-        "create"  => "Create",
-        "edit"    => "Edit",
-        "update"  => "Update",
-        "destroy" => "Delete",
-      }.freeze
-
       def introspect
         return [] unless defined?(Rails) && Rails.application
 
@@ -35,6 +25,9 @@ module SqlChatbot
             parentPath: derive_parent(path),
           }
         end
+      rescue => e
+        warn "[SqlChatbot] RouteIntrospector: Could not introspect routes: #{e.message}"
+        []
       end
 
       def format_route_list
