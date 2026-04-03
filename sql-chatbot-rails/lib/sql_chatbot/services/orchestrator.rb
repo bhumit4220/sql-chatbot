@@ -45,7 +45,8 @@ module SqlChatbot
               question: question,
               schema_summary: schema_summary,
               page_context: page_context,
-              history: history
+              history: history,
+              route_list: build_route_list
             )
 
             raw = @llm.call(classify_messages, json_mode: true)
@@ -173,14 +174,13 @@ module SqlChatbot
       end
 
       def handle_navigation(yielder, question, type, page_context, history)
-        route_summary = @code_indexer.get_route_summary
-        nav_links = route_summary.is_a?(String) && !route_summary.empty? ? [route_summary] : []
+        merged_routes = build_route_list
 
         answer_messages = Prompts::Answer.build_messages(
           question: question,
           type: type,
           page_context: page_context,
-          navigation_links: nav_links.empty? ? nil : nav_links,
+          route_list: merged_routes,
           history: history
         )
 

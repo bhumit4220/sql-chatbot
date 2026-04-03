@@ -157,7 +157,7 @@ module SqlChatbot
         P
       }.freeze
 
-      def self.build_messages(question:, type:, history: [], sql_result: nil, sql_query: nil, code_snippets: nil, page_context: nil, navigation_links: nil)
+      def self.build_messages(question:, type:, history: [], sql_result: nil, sql_query: nil, code_snippets: nil, page_context: nil, navigation_links: nil, route_list: nil)
         system_prompt = SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS["data"]
 
         # Inject custom_context so the LLM can translate status codes, IDs, etc.
@@ -192,6 +192,10 @@ module SqlChatbot
 
         if navigation_links && !navigation_links.empty? && (type == "navigation" || type == "guidance")
           user_content += "\n\nAvailable navigation links:\n#{navigation_links.join("\n")}"
+        end
+
+        if route_list && route_list != "No application routes detected." && (type == "navigation" || type == "guidance")
+          user_content += "\n\n#{route_list}"
         end
 
         [

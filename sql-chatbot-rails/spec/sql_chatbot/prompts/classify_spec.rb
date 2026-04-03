@@ -59,5 +59,28 @@ RSpec.describe SqlChatbot::Prompts::Classify do
       expect(content).to include("msg2")
       expect(content).to include("msg5")
     end
+
+    context "with route_list" do
+      it "includes route list in user content" do
+        messages = described_class.build_messages(
+          question: "where is the users page?",
+          schema_summary: "TABLE users (id INT)",
+          route_list: "## Available Application Pages\n- /admin/users — Users"
+        )
+        user_content = messages.last[:content]
+        expect(user_content).to include("Available Application Pages")
+        expect(user_content).to include("/admin/users")
+      end
+
+      it "excludes empty route list" do
+        messages = described_class.build_messages(
+          question: "how many users?",
+          schema_summary: "TABLE users (id INT)",
+          route_list: "No application routes detected."
+        )
+        user_content = messages.last[:content]
+        expect(user_content).not_to include("application routes")
+      end
+    end
   end
 end

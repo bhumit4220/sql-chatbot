@@ -31,7 +31,7 @@ module SqlChatbot
         searchTerms should be included for "data", "data_with_code", and "code" types.
       PROMPT
 
-      def self.build_messages(question:, schema_summary:, page_context: nil, history: nil)
+      def self.build_messages(question:, schema_summary:, page_context: nil, history: nil, route_list: nil)
         user_content = ""
 
         if history && !history.empty?
@@ -42,6 +42,7 @@ module SqlChatbot
 
         user_content += "Question: #{question}\n\nDatabase schema:\n#{schema_summary}"
         user_content += "\n\nCurrent page context:\n#{page_context}" if page_context
+        user_content += "\n\n#{route_list}" if route_list && route_list != "No application routes detected."
 
         [
           { role: "system", content: SYSTEM_PROMPT },

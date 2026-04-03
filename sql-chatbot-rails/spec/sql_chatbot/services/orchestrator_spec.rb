@@ -149,23 +149,27 @@ RSpec.describe SqlChatbot::Services::Orchestrator do
     end
 
     context "navigation questions" do
-      it "gets route summary and streams answer" do
+      it "uses build_route_list and streams answer" do
         allow(llm_client).to receive(:call).and_return('{"type":"navigation","confidence":0.9}')
-        allow(code_indexer).to receive(:get_route_summary).and_return("GET /settings -> settings#index")
+        allow(code_indexer).to receive(:get_routes).and_return([
+          { method: "GET", path: "/admin/settings", file: "app/controllers/settings_controller.rb" }
+        ])
         allow(llm_client).to receive(:stream).and_yield("Go to Settings.")
 
         events = orchestrator.handle_question(question: "where is settings?").to_a
         types = events.map { |e| e[:type] }
 
         expect(types).to eq(%w[classifying classified token done])
-        expect(code_indexer).to have_received(:get_route_summary)
+        expect(code_indexer).to have_received(:get_routes).at_least(:once)
       end
     end
 
     context "guidance questions" do
-      it "gets route summary and streams answer" do
+      it "uses build_route_list and streams answer" do
         allow(llm_client).to receive(:call).and_return('{"type":"guidance","confidence":0.88}')
-        allow(code_indexer).to receive(:get_route_summary).and_return("POST /users -> users#create")
+        allow(code_indexer).to receive(:get_routes).and_return([
+          { method: "GET", path: "/admin/users", file: "app/controllers/users_controller.rb" }
+        ])
         allow(llm_client).to receive(:stream).and_yield("Click the Add User button.")
 
         events = orchestrator.handle_question(question: "how do I add a user?").to_a

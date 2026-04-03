@@ -42,6 +42,29 @@ RSpec.describe SqlChatbot::Prompts::Answer do
       )
       expect(messages[1][:content]).to include("/settings")
     end
+
+    context "with route_list for navigation" do
+      it "includes route list for navigation type" do
+        messages = described_class.build_messages(
+          question: "where is settings?",
+          type: "navigation",
+          route_list: "## Available Application Pages\n- /admin/settings — Settings"
+        )
+        user_content = messages.last[:content]
+        expect(user_content).to include("Available Application Pages")
+        expect(user_content).to include("/admin/settings")
+      end
+
+      it "does not include route list for data type" do
+        messages = described_class.build_messages(
+          question: "how many users?",
+          type: "data",
+          route_list: "## Available Application Pages\n- /admin/users — Users"
+        )
+        user_content = messages.last[:content]
+        expect(user_content).not_to include("Available Application Pages")
+      end
+    end
   end
 
   describe ".format_sql_result" do

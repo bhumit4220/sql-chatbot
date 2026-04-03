@@ -65,6 +65,22 @@ module SqlChatbot
       render json: { status: "error", message: e.message }, status: 500
     end
 
+    def receive_manifest
+      return render_unauthorized unless authorized?
+      ensure_initialized!
+
+      manifest = params[:manifest]
+      if manifest.present?
+        manifest_data = manifest.respond_to?(:to_unsafe_h) ? manifest.to_unsafe_h : manifest.to_h
+        SqlChatbot.orchestrator.set_manifest(manifest_data)
+        render json: { status: "received", routeCount: manifest["routes"]&.length || 0 }
+      else
+        render json: { error: "manifest is required" }, status: 400
+      end
+    rescue => e
+      render json: { status: "error", message: e.message }, status: 500
+    end
+
     def create_session
       origin = request.headers["Origin"]
 
