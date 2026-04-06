@@ -1,0 +1,41 @@
+{
+  "name": "sql-chatbot-manifest",
+  "version": "1.0.0",
+  "description": "Build-time manifest plugin for sql-chatbot — scans frontend routes and code for the chatbot to understand your app's navigation and codebase.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./vite": "./dist/vite-plugin.js",
+    "./webpack": "./dist/webpack-plugin.js"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bhumit4220/sql-chatbot.git",
+    "directory": "packages/manifest"
+  },
+  "keywords": ["sql-chatbot", "vite-plugin", "webpack-plugin", "route-manifest", "chatbot"],
+  "files": ["dist"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0",
+    "vite": "^6.0.0"
+  },
+  "peerDependencies": {
+    "vite": ">=4.0.0",
+    "webpack": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": { "optional": true },
+    "webpack": { "optional": true }
+  }
+}
