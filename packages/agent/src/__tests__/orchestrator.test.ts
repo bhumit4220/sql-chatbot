@@ -519,4 +519,79 @@ describe('Orchestrator', () => {
     expect(mockValidateSql).not.toHaveBeenCalled();
     expect(events.some((e) => e.type === 'done')).toBe(true);
   });
+
+  describe('manifest support', () => {
+    it('stores manifest via setManifest', async () => {
+      const schema = createMockSchemaService();
+      const codeIndexer = createMockCodeIndexer();
+      const orch = new Orchestrator({ schemaService: schema, codeIndexer, databaseUrl: 'postgres://test' });
+
+      orch.setManifest({
+        version: 1,
+        routes: [
+          { path: '/admin/users', method: 'GET', label: 'Users' },
+          { path: '/dashboard', method: 'GET', label: 'Dashboard' },
+        ],
+        files: [],
+      });
+
+      expect(orch.getRouteList()).toContain('/admin/users');
+      expect(orch.getRouteList()).toContain('Users');
+      expect(orch.getRouteList()).toContain('Dashboard');
+    });
+
+    it('merges manifest routes with code indexer routes', async () => {
+      const schema = createMockSchemaService();
+      const codeIndexer = createMockCodeIndexer();
+      (codeIndexer.getRoutes as ReturnType<typeof vi.fn>).mockReturnValue([
+        { method: 'GET', path: '/admin/users', file: 'routes.tsx' },
+        { method: 'GET', path: '/api/health', file: 'server.ts' },
+      ]);
+
+      const orch = new Orchestrator({ schemaService: schema, codeIndexer, databaseUrl: 'postgres://test' });
+      orch.setManifest({
+        version: 1,
+        routes: [
+          { path: '/admin/users', method: 'GET', label: 'Users', parentPath: '/admin' },
+          { path: '/dashboard', method: 'GET', label: 'Dashboard' },
+        ],
+        files: [],
+      });
+
+      const list = orch.getRouteList();
+      expect(list).toContain('Users');
+      expect(list).toContain('Dashboard');
+      const matches = list.match(/\/admin\/users/g);
+      expect(matches?.length).toBe(1);
+    });
+
+    it('returns fallback message without manifest or routes', async () => {
+      const schema = createMockSchemaService();
+      const codeIndexer = createMockCodeIndexer();
+      (codeIndexer.getRoutes as ReturnType<typeof vi.fn>).mockReturnValue([]);
+
+      const orch = new Orchestrator({ schemaService: schema, codeIndexer, databaseUrl: 'postgres://test' });
+      expect(orch.getRouteList()).toBe('No application routes detected.');
+    });
+
+    it('merges manifest files into search', async () => {
+      const schema = createMockSchemaService();
+      const codeIndexer = createMockCodeIndexer();
+      (codeIndexer.search as ReturnType<typeof vi.fn>).mockReturnValue([]);
+
+      const orch = new Orchestrator({ schemaService: schema, codeIndexer, databaseUrl: 'postgres://test' });
+      orch.setManifest({
+        version: 1,
+        routes: [],
+        files: [
+          { path: 'src/pages/Users.tsx', content: 'export function UsersPage() { return <UserTable users={data} /> }' },
+          { path: 'src/components/UserTable.tsx', content: 'export function UserTable({ users }) { ... }' },
+        ],
+      });
+
+      const results = orch.searchManifestFiles(['UserTable']);
+      expect(results.length).toBe(2);
+      expect(results[0].file).toBe('src/components/UserTable.tsx');
+    });
+  });
 });

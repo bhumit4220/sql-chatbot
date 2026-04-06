@@ -12,6 +12,7 @@ export interface AnswerInput {
   codeSnippets?: CodeSnippet[];
   pageContext?: string;
   navigationLinks?: string[];
+  routeList?: string;
 }
 
 export interface CodeSnippet {
@@ -230,6 +231,11 @@ export function buildAnswerMessages(input: AnswerInput): ChatCompletionMessagePa
   // Add navigation links for navigation/guidance types
   if (input.navigationLinks && input.navigationLinks.length > 0 && (input.type === 'navigation' || input.type === 'guidance')) {
     userContent += `\n\nAvailable navigation links:\n${input.navigationLinks.join('\n')}`;
+  }
+
+  // Add route list for navigation/guidance types (from manifest or code indexer)
+  if (input.routeList && (input.type === 'navigation' || input.type === 'guidance')) {
+    userContent += `\n\n${input.routeList}`;
   }
 
   return [

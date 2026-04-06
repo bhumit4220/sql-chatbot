@@ -36,6 +36,27 @@ interface Classification {
   searchTerms?: string[];
 }
 
+export interface ManifestRoute {
+  path: string;
+  method: string;
+  label: string;
+  component?: string;
+  parentPath?: string;
+}
+
+export interface ManifestFile {
+  path: string;
+  content: string;
+}
+
+export interface Manifest {
+  version: number;
+  generatedAt?: string;
+  framework?: string;
+  routes: ManifestRoute[];
+  files: ManifestFile[];
+}
+
 // ============================================================
 // Orchestrator
 // ============================================================
@@ -44,11 +65,40 @@ export class Orchestrator {
   private schemaService: SchemaService;
   private codeIndexer: CodeIndexer;
   private databaseUrl: string;
+  private manifest: Manifest | null = null;
 
   constructor(deps: OrchestratorDeps) {
     this.schemaService = deps.schemaService;
     this.codeIndexer = deps.codeIndexer;
     this.databaseUrl = deps.databaseUrl;
+  }
+
+  setManifest(manifest: Manifest): void {
+    if (manifest.version !== 1) {
+      console.warn('[sql-chatbot] Unsupported manifest version:', manifest.version);
+      return;
+    }
+    this.manifest = manifest;
+  }
+
+  getRouteList(): string {
+    return this.buildRouteList();
+  }
+
+  searchManifestFiles(terms: string[]): SearchResult[] {
+    if (!this.manifest?.files?.length) return [];
+    const lowerTerms = terms.map(t => t.toLowerCase());
+    const results: SearchResult[] = [];
+    for (const file of this.manifest.files) {
+      const lowerContent = file.content.toLowerCase();
+      const lowerPath = file.path.toLowerCase();
+      const contentMatches = lowerTerms.filter(term => lowerContent.includes(term)).length;
+      const pathMatches = lowerTerms.filter(term => lowerPath.includes(term)).length;
+      const matchCount = contentMatches + pathMatches;
+      if (matchCount === 0) continue;
+      results.push({ file: file.path, content: file.content, matchCount });
+    }
+    return results.sort((a, b) => b.matchCount - a.matchCount).slice(0, 10);
   }
 
   async *handleQuestion(input: AskInput): AsyncGenerator<SSEEvent> {
@@ -174,9 +224,14 @@ export class Orchestrator {
     searchTerms?: string[],
   ): AsyncGenerator<SSEEvent> {
     // Search code index
-    const results = this.codeIndexer.search(searchTerms ?? []);
-    const codeContext = this.formatCodeContext(results);
-    const codeSnippets = this.toCodeSnippets(results);
+    const codeResults = this.codeIndexer.search(searchTerms ?? []);
+    const manifestResults = this.searchManifestFiles(searchTerms ?? []);
+    const allCodeResults = [...codeResults, ...manifestResults]
+      .sort((a, b) => b.matchCount - a.matchCount)
+      .slice(0, 10);
+
+    const codeContext = this.formatCodeContext(allCodeResults);
+    const codeSnippets = this.toCodeSnippets(allCodeResults);
 
     // Delegate to handleData with code context
     yield* this.handleData(input, history, schemaSummary, codeContext, codeSnippets);
@@ -228,19 +283,40 @@ export class Orchestrator {
     history: ChatMessage[],
     type: 'navigation' | 'guidance',
   ): AsyncGenerator<SSEEvent> {
-    const routeSummary = this.codeIndexer.getRouteSummary();
+    const routeList = this.buildRouteList();
 
     const answerMessages = buildAnswerMessages({
       question: input.question,
       type,
       history,
       pageContext: input.pageContext,
-      navigationLinks: routeSummary ? [routeSummary] : undefined,
+      routeList: routeList !== 'No application routes detected.' ? routeList : undefined,
     });
 
     for await (const chunk of streamLLM(answerMessages)) {
       yield { type: 'token', content: chunk };
     }
+  }
+
+  private buildRouteList(): string {
+    const routesByPath: Map<string, { path: string; method: string; label?: string; parentPath?: string }> = new Map();
+    for (const r of this.codeIndexer.getRoutes()) {
+      routesByPath.set(r.path, { path: r.path, method: r.method });
+    }
+    if (this.manifest?.routes) {
+      for (const r of this.manifest.routes) {
+        routesByPath.set(r.path, { path: r.path, method: r.method, label: r.label, parentPath: r.parentPath });
+      }
+    }
+    if (routesByPath.size === 0) return 'No application routes detected.';
+    const lines = Array.from(routesByPath.values())
+      .filter(r => r.method === 'GET')
+      .map(r => {
+        const parentNote = r.parentPath ? ` (under ${r.parentPath})` : '';
+        const label = r.label || r.path.split('/').filter(Boolean).pop() || 'Page';
+        return `- ${r.path} \u2014 ${label}${parentNote}`;
+      });
+    return `## Available Application Pages\n${lines.join('\n')}`;
   }
 
   // ============================================================
