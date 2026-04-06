@@ -117,12 +117,37 @@ export function ChatWidget({ baseUrl, position }: Props) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const manifestRef = useRef<any>(null)
+  const manifestSentRef = useRef(false)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
   useEffect(scrollToBottom, [messages])
+
+  // Fetch and send manifest from frontend's origin on mount
+  useEffect(() => {
+    // Try to fetch build-time manifest from the frontend's own origin
+    fetch(`${window.location.origin}/chatbot-manifest.json`)
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null)
+      .then(manifest => {
+        if (manifest) {
+          manifestRef.current = manifest
+          // Send manifest to backend once
+          fetch(`${baseUrl}/api/manifest`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ manifest }),
+          }).then(() => {
+            manifestSentRef.current = true
+          }).catch(() => {
+            // Silent failure — manifest is a nice-to-have
+          })
+        }
+      })
+  }, [baseUrl])
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return
