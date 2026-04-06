@@ -10,6 +10,7 @@ export interface ClassifyInput {
   schemaSummary: string;
   pageContext?: string;
   history?: ChatMessage[];
+  routeList?: string;
 }
 
 export function buildClassifyMessages(input: ClassifyInput): ChatCompletionMessageParam[] {
@@ -47,6 +48,11 @@ searchTerms should be included for "data", "data_with_code", and "code" types.`;
   userContent += `Question: ${input.question}\n\nDatabase schema:\n${input.schemaSummary}`;
   if (input.pageContext) {
     userContent += `\n\nCurrent page context:\n${input.pageContext}`;
+  }
+  // Route list helps classifier distinguish navigation ("show me the users page")
+  // from data ("show me the users") — intentionally included for all question types
+  if (input.routeList) {
+    userContent += `\n\n${input.routeList}`;
   }
 
   return [

@@ -38,10 +38,12 @@ vi.mock('../services/code-indexer.js', () => ({
 }));
 
 const mockHandleQuestion = vi.fn();
+const mockSetManifest = vi.fn();
 
 vi.mock('../services/orchestrator.js', () => ({
   Orchestrator: vi.fn().mockImplementation(() => ({
     handleQuestion: mockHandleQuestion,
+    setManifest: mockSetManifest,
   })),
 }));
 
@@ -374,6 +376,47 @@ describe('sqlChatbot middleware', () => {
         status: 'error',
         message: 'Refresh failed',
       });
+    });
+  });
+
+  // ----------------------------------------------------------
+  // POST /api/manifest
+  // ----------------------------------------------------------
+
+  describe('POST /api/manifest', () => {
+    it('accepts a valid manifest', async () => {
+      const res = await request(createApp()).post('/chatbot/api/manifest').send({
+        manifest: {
+          version: 1,
+          routes: [{ path: '/users', method: 'GET', label: 'Users' }],
+          files: [],
+        },
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('received');
+      expect(res.body.routeCount).toBe(1);
+    });
+
+    it('rejects missing manifest', async () => {
+      const res = await request(createApp()).post('/chatbot/api/manifest').send({});
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects manifest without routes', async () => {
+      const res = await request(createApp()).post('/chatbot/api/manifest').send({
+        manifest: { version: 1, files: [] },
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 401 when secret is configured but request has no token', async () => {
+      const app = express();
+      app.use(express.json());
+      app.use('/chatbot', sqlChatbot({ databaseUrl: 'postgres://localhost/test', groqApiKey: 'test-key', secret: 'my-secret-token' }));
+      const res = await request(app).post('/chatbot/api/manifest').send({
+        manifest: { version: 1, routes: [], files: [] },
+      });
+      expect(res.status).toBe(401);
     });
   });
 

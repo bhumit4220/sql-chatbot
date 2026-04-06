@@ -119,6 +119,26 @@ describe('buildClassifyMessages', () => {
     expect(systemContent).not.toMatch(/searchTerms should only be included for "code" and "data_with_code"/);
   });
 
+  it('includes routeList in user content when provided', () => {
+    const messages = buildClassifyMessages({
+      question: 'where are the settings?',
+      schemaSummary: 'TABLE users (id INT)',
+      routeList: '## Available Application Pages\n- /settings — Settings',
+    });
+    const userContent = messages[1].content as string;
+    expect(userContent).toContain('Available Application Pages');
+    expect(userContent).toContain('/settings');
+  });
+
+  it('omits routeList when not provided', () => {
+    const messages = buildClassifyMessages({
+      question: 'how many users?',
+      schemaSummary: 'TABLE users (id INT)',
+    });
+    const userContent = messages[1].content as string;
+    expect(userContent).not.toContain('Available Application Pages');
+  });
+
   it('should not contain app-specific references', () => {
     const messages = buildClassifyMessages({
       question: 'test',

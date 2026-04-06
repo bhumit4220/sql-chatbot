@@ -199,6 +199,28 @@ describe('buildAnswerMessages', () => {
     expect(systemContent).toContain('help');
   });
 
+  it('includes routeList for navigation type', () => {
+    const messages = buildAnswerMessages({
+      question: 'where is settings?',
+      type: 'navigation',
+      history: [],
+      routeList: '## Available Application Pages\n- /settings — Settings',
+    });
+    const userContent = messages[1].content as string;
+    expect(userContent).toContain('Available Application Pages');
+  });
+
+  it('excludes routeList for data type', () => {
+    const messages = buildAnswerMessages({
+      question: 'how many users?',
+      type: 'data',
+      history: [],
+      routeList: '## Available Application Pages\n- /users — Users',
+    });
+    const userContent = messages[1].content as string;
+    expect(userContent).not.toContain('Available Application Pages');
+  });
+
   it('should handle unsafe type with appropriate system prompt', () => {
     const messages = buildAnswerMessages({
       ...baseInput,

@@ -133,6 +133,25 @@ export function sqlChatbot(
     }
   });
 
+  // Manifest can be large (all frontend files) — allow up to 5MB for this endpoint only
+  router.post('/api/manifest', express.json({ limit: '5mb' }), async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      await ensureInit();
+      const { manifest } = req.body;
+      if (!manifest || !manifest.routes) {
+        res.status(400).json({ error: 'manifest with routes is required' });
+        return;
+      }
+      orchestrator.setManifest(manifest);
+      res.json({ status: 'received', routeCount: manifest.routes.length });
+    } catch (err) {
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to process manifest' });
+      }
+    }
+  });
+
   // Refresh endpoint
   router.post('/api/refresh', async (_req, res) => {
     if (!requireAuth(_req, res)) return;

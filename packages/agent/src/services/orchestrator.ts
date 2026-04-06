@@ -108,11 +108,13 @@ export class Orchestrator {
     yield { type: 'classifying' };
 
     const schemaSummary = this.schemaService.getSummary();
+    const routeList = this.buildRouteList();
     const classifyMessages = buildClassifyMessages({
       question: input.question,
       schemaSummary,
       pageContext: input.pageContext,
       history,
+      routeList: routeList !== 'No application routes detected.' ? routeList : undefined,
     });
 
     const classifyRaw = await callLLM(classifyMessages, { jsonMode: true });
