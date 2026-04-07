@@ -84,7 +84,7 @@ export function buildManifest(rootDir: string, options?: PluginOptions): Manifes
   return {
     version: 1,
     generatedAt: new Date().toISOString(),
-    framework,
+    framework: framework ?? 'unknown',
     routes,
     files,
   };
