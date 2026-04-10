@@ -162,9 +162,10 @@ export function ChatWidget({ baseUrl, position }: Props) {
       const pageContext = getPageContext()
 
       // Build history from current messages + the new user message
+      // Include SQL from previous assistant messages so follow-ups can reference prior queries
       const history = [...messages, userMessage].map(m => ({
         role: m.role,
-        content: m.content,
+        content: m.sql ? `[SQL: ${m.sql}]\n${m.content}` : m.content,
       }))
 
       const resp = await fetch(`${baseUrl}/api/ask`, {
@@ -224,8 +225,8 @@ export function ChatWidget({ baseUrl, position }: Props) {
                 }
                 break
               case 'sql':
-                if (data.sql) {
-                  currentSql = data.sql
+                if (data.query || data.sql) {
+                  currentSql = data.query || data.sql
                 }
                 break
               case 'classifying':

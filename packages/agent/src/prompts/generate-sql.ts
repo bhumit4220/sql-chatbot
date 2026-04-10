@@ -35,6 +35,7 @@ RULES:
 16. POLYMORPHIC JOINS: When a table has "-- POLYMORPHIC: X_type + X_id", join using both: WHERE X_type = 'ModelName' AND X_id = target.id.
 17. FK LOOKUP VALUES: When a table has "-- FK LOOKUP: column values: id=name, ..." annotation, use these exact IDs in WHERE clauses for that specific column.
 18. ENUM VALUES: When a column has "-- ENUM: column values: X, Y, Z" annotation, use ONLY these exact values (case-sensitive). Never guess enum values.
+19. FOLLOW-UP QUERIES: When the conversation history contains a previous "[SQL: ...]" tag, and the current question uses pronouns like "those", "them", "that", "these", "it" or phrases like "of those", "from those", "among them" — use the previous SQL as a subquery or add its WHERE conditions to the new query. Example: if previous SQL was "SELECT ... FROM titles WHERE created_at >= '2026-01-01'" and user asks "how many of those are movies?", generate: "SELECT COUNT(*) FROM titles WHERE created_at >= '2026-01-01' AND category_id = 2 AND deleted_at IS NULL".
 
 Respond with JSON only: {"sql": "<the SQL query>", "explanation": "<brief explanation of what the query does>"}`;
 

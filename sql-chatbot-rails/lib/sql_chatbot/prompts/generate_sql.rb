@@ -33,6 +33,7 @@ module SqlChatbot
         19. RAILS ENUM VALUES: When a table has "-- RAILS ENUM: column values: Label=N, ..." annotation, the database stores the NUMERIC value N. Use WHERE column = N.
         20. MODEL FOREIGN KEYS: When a table has "-- MODEL FK: column -> target_table.id" annotation, use this column for JOINs even if it doesn't follow standard naming.
         21. ENUM SOFT DELETE: When a table has "-- ENUM SOFT DELETE: column != N to exclude <label> records" annotation, ALWAYS add WHERE column != N to exclude those records by default.
+        22. FOLLOW-UP QUERIES: When the conversation history contains a previous "[SQL: ...]" tag, and the current question uses pronouns like "those", "them", "that", "these", "it" or phrases like "of those", "from those", "among them" — use the previous SQL as a subquery or add its WHERE conditions to the new query. Example: if previous SQL was "SELECT ... FROM titles WHERE created_at >= '2026-01-01'" and user asks "how many of those are movies?", generate: "SELECT COUNT(*) FROM titles WHERE created_at >= '2026-01-01' AND category_id = 2 AND deleted_at IS NULL".
 
         Respond with JSON only: {"sql": "<the SQL query>", "explanation": "<brief explanation of what the query does>"}
       PROMPT
