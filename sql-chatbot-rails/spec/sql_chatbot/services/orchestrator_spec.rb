@@ -8,11 +8,22 @@ require "sql_chatbot/services/orchestrator"
 
 RSpec.describe SqlChatbot::Services::Orchestrator do
   let(:llm_client) { instance_double(SqlChatbot::LLM::Client) }
-  let(:schema_service) { instance_double(SqlChatbot::Services::SchemaService, summary: "TABLE users (id INT, name VARCHAR)", find_lookup_hints: []) }
+  let(:schema_service) do
+    instance_double(SqlChatbot::Services::SchemaService,
+      summary: "TABLE users (id INT, name VARCHAR)",
+      table_names: "Available tables: users",
+      select_schema: "TABLE users (id INT, name VARCHAR)",
+      find_lookup_hints: [])
+  end
   let(:code_indexer) { instance_double(SqlChatbot::Services::CodeIndexer, search: [], get_route_summary: "", get_routes: []) }
   let(:orchestrator) { described_class.new(llm_client: llm_client, schema_service: schema_service, code_indexer: code_indexer) }
 
   describe "#handle_question" do
+    before do
+      allow(schema_service).to receive(:table_names).and_return("Available tables: users")
+      allow(schema_service).to receive(:select_schema).with(anything).and_return("TABLE users (id INT, name VARCHAR)")
+    end
+
     context "greeting questions" do
       it "emits classifying -> classified -> token -> done" do
         allow(llm_client).to receive(:call).and_return('{"type":"greeting","confidence":0.95}')
@@ -254,6 +265,26 @@ RSpec.describe SqlChatbot::Services::Orchestrator do
 
         expect(token_events.length).to eq(3)
         expect(token_events.map { |e| e[:content] }).to eq(["Hello", ", ", "how can I help?"])
+      end
+    end
+
+    describe "smart schema selection" do
+      it "uses table_names for classify and select_schema for SQL generation" do
+        allow(schema_service).to receive(:table_names).and_return("Available tables: users")
+        allow(schema_service).to receive(:select_schema).with(["users"]).and_return("TABLE users (id INT PK, name VARCHAR)")
+        allow(llm_client).to receive(:call).and_return(
+          '{"type":"data","confidence":0.9,"searchTerms":["users"]}',
+          '{"sql":"SELECT COUNT(*) FROM users","explanation":"count"}'
+        )
+        allow(SqlChatbot::Services::SqlExecutor).to receive(:validate_sql).and_return({ valid: true, sql: "SELECT COUNT(*) FROM users" })
+        allow(SqlChatbot::Services::SqlExecutor).to receive(:execute_sql).and_return({ rows: [{ "count" => 5 }], columns: ["count"], row_count: 1 })
+        allow(llm_client).to receive(:stream).and_yield("5 users.")
+        allow(code_indexer).to receive(:search).with(["users"]).and_return([])
+
+        events = orchestrator.handle_question(question: "How many users?").to_a
+        expect(schema_service).to have_received(:table_names)
+        expect(schema_service).to have_received(:select_schema).with(["users"])
+        expect(schema_service).not_to have_received(:summary)
       end
     end
   end

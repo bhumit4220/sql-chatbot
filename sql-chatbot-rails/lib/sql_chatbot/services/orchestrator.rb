@@ -40,10 +40,10 @@ module SqlChatbot
             # --- Step 1: Classify ---
             yielder.yield({ type: "classifying" })
 
-            schema_summary = @schema.summary
+            table_names_str = @schema.table_names
             classify_messages = Prompts::Classify.build_messages(
               question: question,
-              schema_summary: schema_summary,
+              schema_summary: table_names_str,
               page_context: page_context,
               history: history
             )
@@ -60,7 +60,7 @@ module SqlChatbot
             # --- Step 2: Route by question type ---
             case classification[:type]
             when "data", "data_with_code"
-              handle_data_with_code(yielder, question, classification, schema_summary, page_context, history)
+              handle_data_with_code(yielder, question, classification, page_context, history)
             when "code"
               handle_code(yielder, question, classification, history)
             when "navigation", "guidance"
@@ -85,7 +85,7 @@ module SqlChatbot
       # Route handlers
       # ============================================================
 
-      def handle_data_with_code(yielder, question, classification, schema_summary, page_context, history)
+      def handle_data_with_code(yielder, question, classification, page_context, history)
         # Search code index for context
         search_terms = classification[:searchTerms] || []
         code_results = search_terms.empty? ? [] : @code_indexer.search(search_terms)
@@ -97,10 +97,13 @@ module SqlChatbot
         # Find lookup hints matching the question
         lookup_hints = @schema.find_lookup_hints(question)
 
+        # Select only relevant schema tables based on search terms
+        selected_schema = @schema.select_schema(search_terms)
+
         # Generate SQL
         gen_messages = Prompts::GenerateSql.build_messages(
           question: question,
-          schema: schema_summary,
+          schema: selected_schema,
           code_context: code_context.empty? ? nil : code_context,
           lookup_hints: lookup_hints.empty? ? nil : lookup_hints,
           history: history
