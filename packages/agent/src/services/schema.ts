@@ -298,7 +298,8 @@ export class SchemaService {
   findLookupHints(question: string): string[] {
     if (!this.summary) return [];
 
-    const words = question.toLowerCase().split(/\W+/).filter(w => w.length > 0);
+    const stopWords = new Set(['a','an','the','is','are','was','were','be','been','being','have','has','had','do','does','did','will','would','shall','should','may','might','can','could','how','what','when','where','who','which','why','not','and','or','but','if','then','else','for','from','by','with','at','in','on','to','of','it','its','this','that','these','those','many','much','there','some','all','any','each','every','no','me','my','show','get','list','find','give','tell']);
+    const words = question.toLowerCase().split(/\W+/).filter(w => w.length >= 2 && !stopWords.has(w));
     const hints: string[] = [];
     let currentTable: string | null = null;
 
@@ -307,7 +308,6 @@ export class SchemaService {
       if (tableMatch) {
         currentTable = tableMatch[1];
       } else if (line.includes('FK LOOKUP:') && currentTable) {
-        // Parse: "  -- FK LOOKUP: category_id values: 1=Tv Shows, 2=Movie, 3=Action"
         const match = line.match(/FK LOOKUP:\s+(\S+).*?values:\s+(.+)/);
         if (!match) continue;
 
@@ -316,19 +316,21 @@ export class SchemaService {
         for (const pair of pairs) {
           const [id, name] = pair.split('=', 2);
           if (!name) continue;
+          const cleanName = name.trim();
+          if (cleanName.length < 2) continue;
 
-          const nameWords = name.trim().toLowerCase().split(/\W+/);
-          const nameLower = name.trim().toLowerCase();
+          const nameWords = cleanName.toLowerCase().split(/\W+/).filter(w => w.length > 0);
+          const nameLower = cleanName.toLowerCase();
           const matchedWord = words.find(w =>
             nameWords.includes(w) || nameLower === w ||
-            nameLower.startsWith(w) || w.startsWith(nameLower)
+            (cleanName.length >= 3 && nameLower.startsWith(w)) ||
+            (w.length >= 3 && w.startsWith(nameLower))
           );
           if (matchedWord) {
-            hints.push(`The user mentions "${matchedWord}". In the ${currentTable} table, use WHERE ${fkCol} = ${id.trim()} (${name.trim()}).`);
+            hints.push(`The user mentions "${matchedWord}". In the ${currentTable} table, use WHERE ${fkCol} = ${id.trim()} (${cleanName}).`);
           }
         }
       } else if (line.includes('RAILS ENUM:') && currentTable) {
-        // Parse: "  -- RAILS ENUM: status values: Active=1, Inactive=2, Deleted=3"
         const match = line.match(/RAILS ENUM:\s+(\S+)\s+values:\s+(.+)/);
         if (!match) continue;
 
@@ -337,21 +339,24 @@ export class SchemaService {
         for (const pair of pairs) {
           const [label, num] = pair.split('=', 2);
           if (!label || !num) continue;
+          const cleanLabel = label.trim();
+          if (cleanLabel.length < 2) continue;
 
-          const labelWords = label.trim().toLowerCase().split(/\W+/);
-          const labelLower = label.trim().toLowerCase();
+          const labelWords = cleanLabel.toLowerCase().split(/\W+/).filter(w => w.length > 0);
+          const labelLower = cleanLabel.toLowerCase();
           const matchedWord = words.find(w =>
             labelWords.includes(w) || labelLower === w ||
-            labelLower.startsWith(w) || w.startsWith(labelLower)
+            (cleanLabel.length >= 3 && labelLower.startsWith(w)) ||
+            (w.length >= 3 && w.startsWith(labelLower))
           );
           if (matchedWord) {
-            hints.push(`The user mentions "${matchedWord}". In the ${currentTable} table, use WHERE ${col} = ${num.trim()} (${label.trim()}).`);
+            hints.push(`The user mentions "${matchedWord}". In the ${currentTable} table, use WHERE ${col} = ${num.trim()} (${cleanLabel}).`);
           }
         }
       }
     }
 
-    return [...new Set(hints)];
+    return [...new Set(hints)].slice(0, 15);
   }
 
   /**

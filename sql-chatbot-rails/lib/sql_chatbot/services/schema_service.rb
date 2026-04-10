@@ -83,7 +83,9 @@ module SqlChatbot
       def find_lookup_hints(question)
         return [] if @summary_text.empty?
 
-        words = question.downcase.split(/\W+/).reject(&:empty?)
+        # Filter out stop words that would match too broadly
+        stop_words = Set.new(%w[a an the is are was were be been being have has had do does did will would shall should may might can could how what when where who which why not and or but if then else for from by with at in on to of it its this that these those])
+        words = question.downcase.split(/\W+/).reject { |w| w.empty? || w.length < 2 || stop_words.include?(w) }
         hints = []
         current_table = nil
 
@@ -91,7 +93,6 @@ module SqlChatbot
           if line.start_with?("TABLE ")
             current_table = line.match(/^TABLE (\S+)/)[1]
           elsif line.include?("FK LOOKUP:") && current_table
-            # Parse: "  -- FK LOOKUP: category_id values: 1=Tv Shows, 2=Movie, 3=Action"
             match = line.match(/FK LOOKUP:\s+(\S+).*?values:\s+(.+)/)
             next unless match
 
@@ -100,16 +101,21 @@ module SqlChatbot
             pairs.each do |pair|
               id, name = pair.split("=", 2)
               next unless name
+              clean_name = name.strip
+              next if clean_name.empty? || clean_name.length < 2  # Skip empty/tiny names
 
-              # Check if any word in the question matches this lookup value
-              name_words = name.strip.downcase.split(/\W+/)
-              matched_word = words.find { |w| name_words.include?(w) || name.strip.downcase == w || name.strip.downcase.start_with?(w) || w.start_with?(name.strip.downcase) }
+              name_words = clean_name.downcase.split(/\W+/).reject(&:empty?)
+              matched_word = words.find do |w|
+                name_words.include?(w) ||
+                  clean_name.downcase == w ||
+                  (clean_name.length >= 3 && clean_name.downcase.start_with?(w)) ||
+                  (w.length >= 3 && w.start_with?(clean_name.downcase))
+              end
               if matched_word
-                hints << "The user mentions \"#{matched_word}\". In the #{current_table} table, use WHERE #{fk_col} = #{id.strip} (#{name.strip})."
+                hints << "The user mentions \"#{matched_word}\". In the #{current_table} table, use WHERE #{fk_col} = #{id.strip} (#{clean_name})."
               end
             end
           elsif line.include?("RAILS ENUM:") && current_table
-            # Parse: "  -- RAILS ENUM: status values: Active=1, Inactive=2, Deleted=3"
             match = line.match(/RAILS ENUM:\s+(\S+)\s+values:\s+(.+)/)
             next unless match
 
@@ -118,17 +124,24 @@ module SqlChatbot
             pairs.each do |pair|
               label, num = pair.split("=", 2)
               next unless label && num
+              clean_label = label.strip
+              next if clean_label.empty? || clean_label.length < 2
 
-              label_words = label.strip.downcase.split(/\W+/)
-              matched_word = words.find { |w| label_words.include?(w) || label.strip.downcase == w || label.strip.downcase.start_with?(w) || w.start_with?(label.strip.downcase) }
+              label_words = clean_label.downcase.split(/\W+/).reject(&:empty?)
+              matched_word = words.find do |w|
+                label_words.include?(w) ||
+                  clean_label.downcase == w ||
+                  (clean_label.length >= 3 && clean_label.downcase.start_with?(w)) ||
+                  (w.length >= 3 && w.start_with?(clean_label.downcase))
+              end
               if matched_word
-                hints << "The user mentions \"#{matched_word}\". In the #{current_table} table, use WHERE #{col} = #{num.strip} (#{label.strip})."
+                hints << "The user mentions \"#{matched_word}\". In the #{current_table} table, use WHERE #{col} = #{num.strip} (#{clean_label})."
               end
             end
           end
         end
 
-        hints.uniq
+        hints.uniq.first(15)  # Cap at 15 hints to avoid drowning the LLM
       end
 
       # Extract RAILS ENUM annotations from a schema string for the answer prompt.
