@@ -13,6 +13,7 @@ export interface AnswerInput {
   pageContext?: string;
   navigationLinks?: string[];
   routeList?: string;
+  enumContext?: string;
 }
 
 export interface CodeSnippet {
@@ -126,6 +127,12 @@ export function buildAnswerMessages(input: AnswerInput): ChatCompletionMessagePa
       break;
     default:
       systemPrompt = buildDataSystemPrompt();
+  }
+
+  // Inject auto-detected enum mappings so the LLM can translate integer codes to labels
+  if (input.enumContext && input.enumContext.trim().length > 0 &&
+      (input.type === 'data' || input.type === 'data_with_code')) {
+    systemPrompt += `\n\nENUM MAPPINGS (use these to translate integer status/type codes to human-readable labels):\n${input.enumContext}`;
   }
 
   let userContent = '';

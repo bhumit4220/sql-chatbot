@@ -25,12 +25,12 @@ RULES:
 11. For "top N" or "most recent" queries, ALWAYS include relevant dates (created_at, updated_at, release_date) and key attributes (name, title, status, type) — give enough context for a meaningful answer
 12. NEVER return just IDs or a single column when additional context columns are available — the answer should be self-contained
 13. Use COALESCE for nullable date/number columns to provide fallback values where sensible
-14. ROUND decimals: Always use ROUND(AVG(...), 2) or ROUND(value, 2) for averages and calculated decimals. Never return raw floating-point precision.
-15. DO NOT filter by status/active unless the user explicitly asks. If the user says "top contractors by rating", return ALL contractors with ratings — do NOT add WHERE status = 1. Only filter by status when the user says "active", "inactive", "deleted", etc.
-16. SOFT DELETE: When a table has "-- SOFT DELETE" annotation, ALWAYS add WHERE deleted_at IS NULL to exclude deleted records, unless the user explicitly asks about deleted items
-17. POLYMORPHIC JOINS: When a table has "-- POLYMORPHIC: X_type + X_id", join using both: WHERE X_type = 'ModelName' AND X_id = target.id.
-18. LOOKUP VALUES: When a table has "-- VALUES: id=name" mappings, use these exact IDs in WHERE clauses.
-19. ENUM VALUES: When a column has "-- ENUM: column values: X, Y, Z" annotation, use ONLY these exact values (case-sensitive). Never guess enum values.
+14a. ROUND decimals: Always use ROUND(AVG(...), 2) or ROUND(value, 2) for averages and calculated decimals. Never return raw floating-point precision.
+14b. STATUS FILTERING: Only filter by specific status values when the user explicitly mentions a status (e.g., "active", "inactive", "completed", "disputed"). For example, "top contractors by rating" should NOT add WHERE status = 1. But "active contractors" MUST use the exact enum value for Active (e.g., WHERE status = 1). IMPORTANT: This rule does NOT override ENUM SOFT DELETE (rule 21) — always exclude soft-deleted records regardless.
+15. SOFT DELETE (column-based): When a table has "-- SOFT DELETE: filter <column> IS NULL" annotation, add WHERE <column> IS NULL to exclude deleted records, unless the user explicitly asks about deleted items.
+16. POLYMORPHIC JOINS: When a table has "-- POLYMORPHIC: X_type + X_id", join using both: WHERE X_type = 'ModelName' AND X_id = target.id.
+17. FK LOOKUP VALUES: When a table has "-- FK LOOKUP: column values: id=name, ..." annotation, use these exact IDs in WHERE clauses for that specific column.
+18. ENUM VALUES: When a column has "-- ENUM: column values: X, Y, Z" annotation, use ONLY these exact values (case-sensitive). Never guess enum values.
 
 Respond with JSON only: {"sql": "<the SQL query>", "explanation": "<brief explanation of what the query does>"}`;
 

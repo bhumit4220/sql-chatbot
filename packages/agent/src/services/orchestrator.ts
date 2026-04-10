@@ -202,6 +202,9 @@ export class Orchestrator {
       return;
     }
 
+    // Extract enum context from the selected schema for answer translation
+    const enumContext = this.schemaService.extractEnumContext(schemaSummary);
+
     // Stream answer
     const answerMessages = buildAnswerMessages({
       question: input.question,
@@ -211,6 +214,7 @@ export class Orchestrator {
       sqlQuery: sqlParsed.sql,
       codeSnippets,
       pageContext: input.pageContext,
+      enumContext: enumContext || undefined,
     });
 
     for await (const chunk of streamLLM(answerMessages)) {

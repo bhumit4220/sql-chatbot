@@ -100,7 +100,7 @@ module SqlChatbot
         # Select only relevant schema tables based on search terms
         selected_schema = @schema.select_schema(search_terms)
 
-        # Generate SQL
+        # Generate SQL (with one retry on execution error)
         gen_messages = Prompts::GenerateSql.build_messages(
           question: question,
           schema: selected_schema,
@@ -125,16 +125,58 @@ module SqlChatbot
           return
         end
 
-        # Execute SQL
+        # Execute SQL with one retry on recoverable errors
         yielder.yield({ type: "executing" })
 
         begin
           result = SqlExecutor.execute_sql(validation[:sql])
+        rescue ActiveRecord::StatementInvalid => e
+          # Strategy 1: Try programmatic column fix (fast, no LLM call)
+          log_error(e)
+          fixed_sql = try_fix_column(e.message, validation[:sql], selected_schema)
+          if fixed_sql
+            begin
+              fixed_validation = SqlExecutor.validate_sql(fixed_sql)
+              if fixed_validation[:valid]
+                yielder.yield({ type: "sql", query: fixed_sql, explanation: "Auto-corrected column name" })
+                result = SqlExecutor.execute_sql(fixed_validation[:sql])
+              end
+            rescue => _fix_error
+              # Fall through to LLM retry
+            end
+          end
+
+          # Strategy 2: Ask LLM to fix (slower, more flexible)
+          unless defined?(result) && result
+            error_hint = build_column_hint(e.message, selected_schema)
+            retry_messages = gen_messages + [
+              { role: "assistant", content: raw_sql },
+              { role: "user", content: "The SQL query failed with this error:\n#{e.message}\n\n#{error_hint}Fix the query using ONLY columns from the schema. Keep all SELECT columns — do not drop columns, use the correct names." }
+            ]
+            begin
+              retry_sql = @llm.call(retry_messages, json_mode: true)
+              retry_parsed = parse_sql_generation(retry_sql)
+              retry_validation = SqlExecutor.validate_sql(retry_parsed[:sql])
+              if retry_validation[:valid] && !retry_parsed[:sql].empty?
+                yielder.yield({ type: "sql", query: retry_parsed[:sql], explanation: "Corrected: #{retry_parsed[:explanation]}" })
+                result = SqlExecutor.execute_sql(retry_validation[:sql])
+              else
+                raise e
+              end
+            rescue => retry_error
+              log_error(retry_error)
+              yielder.yield({ type: "error", message: friendly_error_message(e) })
+              return
+            end
+          end
         rescue => e
           log_error(e)
           yielder.yield({ type: "error", message: friendly_error_message(e) })
           return
         end
+
+        # Extract enum context from the selected schema for answer translation
+        enum_context = @schema.extract_enum_context(selected_schema)
 
         # Stream answer
         answer_messages = Prompts::Answer.build_messages(
@@ -144,7 +186,8 @@ module SqlChatbot
           sql_query: validation[:sql],
           code_snippets: code_snippets.empty? ? nil : code_snippets,
           page_context: page_context,
-          history: history
+          history: history,
+          enum_context: enum_context.empty? ? nil : enum_context
         )
 
         @llm.stream(answer_messages) do |chunk|
@@ -269,6 +312,82 @@ module SqlChatbot
         else
           "Something went wrong while processing your question. Please try again."
         end
+      end
+
+      # Attempt to fix an UndefinedColumn error by finding the correct column name.
+      # Returns the corrected SQL string, or nil if no fix could be determined.
+      def try_fix_column(error_message, sql, schema)
+        return nil unless error_message.include?("UndefinedColumn") || error_message.include?("does not exist")
+
+        # Extract "alias.column" from error: column jt.name does not exist
+        col_match = error_message.match(/column\s+"?(\w+)\.(\w+)"?\s+does not exist/i)
+        return nil unless col_match
+
+        table_alias = col_match[1]
+        bad_col = col_match[2]
+
+        # Find the real table name from the SQL (e.g., "FROM job_types jt" → jt = job_types)
+        alias_match = sql.match(/(?:FROM|JOIN)\s+(\w+)\s+#{Regexp.escape(table_alias)}\b/i)
+        return nil unless alias_match
+        real_table = alias_match[1]
+
+        # Extract columns for this table from the schema
+        table_line = schema.split("\n").find { |l| l.start_with?("TABLE #{real_table} ") || l.start_with?("TABLE #{real_table}\t") }
+        return nil unless table_line
+
+        cols_in_parens = table_line.match(/\((.+)\)/)
+        return nil unless cols_in_parens
+        columns = cols_in_parens[1].scan(/(\w+)\s+\w+/).flatten
+
+        # Find the best replacement: prefer title > label > description for "name" hallucination
+        replacement = nil
+        if %w[name names].include?(bad_col.downcase)
+          replacement = (columns & %w[title label first_name display_name description]).first
+        end
+        # Fallback: fuzzy match (column containing the bad name or vice versa)
+        replacement ||= columns.find { |c| c.include?(bad_col) || bad_col.include?(c) }
+
+        return nil unless replacement
+
+        # Replace in SQL: "alias.bad_col" → "alias.replacement"
+        fixed = sql.gsub(/\b#{Regexp.escape(table_alias)}\.#{Regexp.escape(bad_col)}\b/i, "#{table_alias}.#{replacement}")
+        # Also fix ORDER BY or other unqualified uses
+        fixed == sql ? nil : fixed
+      end
+
+      # Build a helpful hint from the PG error and schema, e.g.:
+      #   "Column 'name' does not exist on job_types. Available columns: id, title, ..."
+      def build_column_hint(error_message, schema)
+        # Extract the bad column from PG::UndefinedColumn errors
+        if error_message.include?("UndefinedColumn") || error_message.include?("does not exist")
+          # Try to extract "column X does not exist" or "column X.Y does not exist"
+          col_match = error_message.match(/column[:\s]+"?(\w+\.)?(\w+)"?\s+(does not exist|of relation)/i)
+          if col_match
+            bad_col = col_match[2]
+            # Find tables in the schema that might be relevant
+            table_columns = {}
+            current_table = nil
+            schema.split("\n").each do |line|
+              if line.start_with?("TABLE ")
+                current_table = line.match(/^TABLE (\S+)/)[1]
+                # Extract column names from the TABLE line (format: "TABLE name (col1 TYPE, col2 TYPE, ...)")
+                cols_match = line.match(/\((.+)\)/)
+                if cols_match
+                  table_columns[current_table] = cols_match[1].scan(/(\w+)\s+\w+/).flatten
+                end
+              end
+            end
+
+            # Find tables whose columns DON'T include the bad column
+            hints = table_columns.map do |table, cols|
+              next if cols.include?(bad_col)
+              "Table '#{table}' columns include: #{cols.first(15).join(', ')}"
+            end.compact
+
+            return "HINT: Column '#{bad_col}' does not exist. #{hints.first(3).join(". ")}.\n\n" unless hints.empty?
+          end
+        end
+        ""
       end
 
       def log_error(exception)

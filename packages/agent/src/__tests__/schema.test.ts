@@ -841,4 +841,118 @@ describe('SchemaService', () => {
       expect(result).toContain('RAILS ENUM');
     });
   });
+
+  describe('findLookupHints', () => {
+    let svc: SchemaService;
+
+    beforeEach(() => {
+      svc = new SchemaService();
+    });
+
+    it('returns empty array when summary is empty', () => {
+      expect(svc.findLookupHints('show me active contractors')).toEqual([]);
+    });
+
+    it('matches FK LOOKUP values in the question', () => {
+      (svc as any).summary = [
+        'TABLE titles (id BIGINT PK, name VARCHAR, category_id INT FK=>categories.id)',
+        '  -- FK LOOKUP: category_id values: 1=Tv Shows, 2=Movie, 3=Action',
+      ].join('\n');
+
+      const hints = svc.findLookupHints('show me movies');
+      expect(hints).toHaveLength(1);
+      expect(hints[0]).toContain('category_id = 2');
+      expect(hints[0]).toContain('Movie');
+    });
+
+    it('matches RAILS ENUM values in the question', () => {
+      (svc as any).summary = [
+        'TABLE contractors (id BIGINT PK, name VARCHAR, status INT)',
+        '  -- RAILS ENUM: status values: Active=1, Inactive=2, Deleted=3',
+        'TABLE jobs (id BIGINT PK, title VARCHAR, status INT)',
+        '  -- RAILS ENUM: status values: Active=1, Completed=2, Disputed=3',
+      ].join('\n');
+
+      const hints = svc.findLookupHints('show me active contractors');
+      expect(hints.length).toBeGreaterThanOrEqual(1);
+      expect(hints.some(h => h.includes('status = 1') && h.includes('contractors'))).toBe(true);
+    });
+
+    it('matches RAILS ENUM disputed status', () => {
+      (svc as any).summary = [
+        'TABLE jobs (id BIGINT PK, title VARCHAR, status INT)',
+        '  -- RAILS ENUM: status values: Active=1, Completed=2, Disputed=3',
+      ].join('\n');
+
+      const hints = svc.findLookupHints('how many disputed jobs?');
+      expect(hints).toHaveLength(1);
+      expect(hints[0]).toContain('status = 3');
+      expect(hints[0]).toContain('Disputed');
+    });
+
+    it('returns no hints when no words match', () => {
+      (svc as any).summary = [
+        'TABLE contractors (id BIGINT PK, name VARCHAR, status INT)',
+        '  -- RAILS ENUM: status values: Active=1, Inactive=2, Deleted=3',
+      ].join('\n');
+
+      const hints = svc.findLookupHints('how many customers?');
+      expect(hints).toHaveLength(0);
+    });
+
+    it('returns unique hints only', () => {
+      (svc as any).summary = [
+        'TABLE contractors (id BIGINT PK, name VARCHAR, status INT)',
+        '  -- RAILS ENUM: status values: Active=1, Inactive=2',
+        'TABLE jobs (id BIGINT PK, title VARCHAR, status INT)',
+        '  -- RAILS ENUM: status values: Active=1, Completed=2',
+      ].join('\n');
+
+      const hints = svc.findLookupHints('show completed snow removal jobs');
+      expect(hints).toHaveLength(1);
+      expect(hints[0]).toContain('jobs');
+      expect(hints[0]).toContain('Completed');
+    });
+  });
+
+  describe('extractEnumContext', () => {
+    let svc: SchemaService;
+
+    beforeEach(() => {
+      svc = new SchemaService();
+    });
+
+    it('extracts RAILS ENUM annotations from summary', () => {
+      (svc as any).summary = [
+        'TABLE contractors (id BIGINT PK, name VARCHAR, status INT)',
+        '  -- RAILS ENUM: status values: Active=1, Inactive=2, Deleted=3',
+        'TABLE jobs (id BIGINT PK, title VARCHAR, status INT)',
+        '  -- RAILS ENUM: status values: Active=1, Completed=2, Disputed=3',
+      ].join('\n');
+
+      const result = svc.extractEnumContext();
+      expect(result).toContain('contractors.status: Active=1, Inactive=2, Deleted=3');
+      expect(result).toContain('jobs.status: Active=1, Completed=2, Disputed=3');
+    });
+
+    it('returns empty string when no RAILS ENUM annotations exist', () => {
+      (svc as any).summary = 'TABLE users (id INT PK, name VARCHAR)';
+      expect(svc.extractEnumContext()).toBe('');
+    });
+
+    it('accepts optional schema text parameter', () => {
+      const custom = [
+        'TABLE contractors (id BIGINT PK, status INT)',
+        '  -- RAILS ENUM: status values: Active=1, Inactive=2',
+      ].join('\n');
+
+      const result = svc.extractEnumContext(custom);
+      expect(result).toBe('contractors.status: Active=1, Inactive=2');
+    });
+
+    it('returns empty string for schema with no RAILS ENUM', () => {
+      const result = svc.extractEnumContext('TABLE foo (id INT PK)');
+      expect(result).toBe('');
+    });
+  });
 });

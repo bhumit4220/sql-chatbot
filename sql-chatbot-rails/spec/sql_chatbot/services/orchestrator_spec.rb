@@ -13,7 +13,8 @@ RSpec.describe SqlChatbot::Services::Orchestrator do
       summary: "TABLE users (id INT, name VARCHAR)",
       table_names: "Available tables: users",
       select_schema: "TABLE users (id INT, name VARCHAR)",
-      find_lookup_hints: [])
+      find_lookup_hints: [],
+      extract_enum_context: "")
   end
   let(:code_indexer) { instance_double(SqlChatbot::Services::CodeIndexer, search: [], get_route_summary: "", get_routes: []) }
   let(:orchestrator) { described_class.new(llm_client: llm_client, schema_service: schema_service, code_indexer: code_indexer) }
@@ -22,6 +23,7 @@ RSpec.describe SqlChatbot::Services::Orchestrator do
     before do
       allow(schema_service).to receive(:table_names).and_return("Available tables: users")
       allow(schema_service).to receive(:select_schema).with(anything).and_return("TABLE users (id INT, name VARCHAR)")
+      allow(schema_service).to receive(:extract_enum_context).with(anything).and_return("")
     end
 
     context "greeting questions" do
@@ -265,6 +267,85 @@ RSpec.describe SqlChatbot::Services::Orchestrator do
 
         expect(token_events.length).to eq(3)
         expect(token_events.map { |e| e[:content] }).to eq(["Hello", ", ", "how can I help?"])
+      end
+    end
+
+    describe "SQL retry on execution error" do
+      # Simulate ActiveRecord::StatementInvalid for unit tests
+      let(:statement_invalid_class) do
+        stub_const("ActiveRecord::StatementInvalid", Class.new(StandardError))
+        ActiveRecord::StatementInvalid
+      end
+
+      it "retries with error feedback when SQL execution fails with column error" do
+        error = statement_invalid_class.new("PG::UndefinedColumn: column name does not exist")
+        allow(llm_client).to receive(:call).and_return(
+          '{"type":"data","confidence":0.9,"searchTerms":["users"]}',
+          '{"sql":"SELECT name FROM users","explanation":"get names"}',
+          '{"sql":"SELECT first_name FROM users","explanation":"get names corrected"}'
+        )
+        allow(SqlChatbot::Services::SqlExecutor).to receive(:validate_sql)
+          .and_return({ valid: true, sql: "SELECT name FROM users" }, { valid: true, sql: "SELECT first_name FROM users" })
+        call_count = 0
+        allow(SqlChatbot::Services::SqlExecutor).to receive(:execute_sql) do
+          call_count += 1
+          if call_count == 1
+            raise error
+          else
+            { rows: [{ "first_name" => "Alice" }], columns: ["first_name"], row_count: 1 }
+          end
+        end
+        allow(llm_client).to receive(:stream).and_yield("Alice")
+        allow(code_indexer).to receive(:search).and_return([])
+
+        events = orchestrator.handle_question(question: "show user names").to_a
+        token_events = events.select { |e| e[:type] == "token" }
+        error_events = events.select { |e| e[:type] == "error" }
+
+        expect(token_events).not_to be_empty
+        expect(error_events).to be_empty
+        expect(llm_client).to have_received(:call).exactly(3).times
+      end
+
+      it "shows error when both original and retry fail" do
+        error = statement_invalid_class.new("PG::UndefinedColumn: column bad does not exist")
+        allow(llm_client).to receive(:call).and_return(
+          '{"type":"data","confidence":0.9,"searchTerms":["users"]}',
+          '{"sql":"SELECT bad FROM users","explanation":"bad"}',
+          '{"sql":"SELECT also_bad FROM users","explanation":"still bad"}'
+        )
+        allow(SqlChatbot::Services::SqlExecutor).to receive(:validate_sql)
+          .and_return({ valid: true, sql: "SELECT bad FROM users" }, { valid: true, sql: "SELECT also_bad FROM users" })
+        allow(SqlChatbot::Services::SqlExecutor).to receive(:execute_sql)
+          .and_raise(error)
+        allow(code_indexer).to receive(:search).and_return([])
+
+        events = orchestrator.handle_question(question: "show bad data").to_a
+        error_events = events.select { |e| e[:type] == "error" }
+
+        expect(error_events).not_to be_empty
+      end
+    end
+
+    describe "#try_fix_column" do
+      it "replaces hallucinated 'name' with 'title' from schema" do
+        error = "PG::UndefinedColumn: ERROR:  column jt.name does not exist"
+        sql = "SELECT jt.id, jt.name FROM job_types jt WHERE jt.status != 3 ORDER BY jt.name"
+        schema = "TABLE job_types (id BIGINT PK, title VARCHAR, status INT)"
+
+        result = orchestrator.send(:try_fix_column, error, sql, schema)
+        expect(result).to eq("SELECT jt.id, jt.title FROM job_types jt WHERE jt.status != 3 ORDER BY jt.title")
+      end
+
+      it "returns nil when column is not in error message" do
+        result = orchestrator.send(:try_fix_column, "some other error", "SELECT 1", "TABLE t (id INT)")
+        expect(result).to be_nil
+      end
+
+      it "returns nil when table alias not found in SQL" do
+        error = "PG::UndefinedColumn: ERROR:  column x.name does not exist"
+        result = orchestrator.send(:try_fix_column, error, "SELECT 1 FROM foo f", "TABLE foo (id INT, title VARCHAR)")
+        expect(result).to be_nil
       end
     end
 

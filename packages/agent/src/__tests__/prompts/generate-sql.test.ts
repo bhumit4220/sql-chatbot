@@ -122,7 +122,7 @@ describe('buildGenerateSqlMessages', () => {
 
     const systemContent = messages[0].content as string;
     expect(systemContent).toContain('SOFT DELETE');
-    expect(systemContent).toContain('deleted_at IS NULL');
+    expect(systemContent).toContain('IS NULL');
   });
 
   it('should include POLYMORPHIC JOINS rule in system prompt', () => {
@@ -146,8 +146,8 @@ describe('buildGenerateSqlMessages', () => {
     });
 
     const systemContent = messages[0].content as string;
-    expect(systemContent).toContain('LOOKUP VALUES');
-    expect(systemContent).toContain('VALUES: id=name');
+    expect(systemContent).toContain('FK LOOKUP VALUES');
+    expect(systemContent).toContain('FK LOOKUP: column values');
   });
 
   it('should include ENUM VALUES rule in system prompt', () => {

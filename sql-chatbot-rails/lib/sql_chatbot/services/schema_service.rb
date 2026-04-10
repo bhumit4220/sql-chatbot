@@ -76,9 +76,10 @@ module SqlChatbot
         @tables.length
       end
 
-      # Scan FK LOOKUP annotations for values that match words in the question.
+      # Scan FK LOOKUP and RAILS ENUM annotations for values that match words in the question.
       # Returns array of hint strings like:
       #   "The user mentions 'movies'. In the titles table, use WHERE category_id = 2 (Movie)."
+      #   "The user mentions 'active'. In the contractors table, use WHERE status = 1 (Active)."
       def find_lookup_hints(question)
         return [] if @summary_text.empty?
 
@@ -107,10 +108,50 @@ module SqlChatbot
                 hints << "The user mentions \"#{matched_word}\". In the #{current_table} table, use WHERE #{fk_col} = #{id.strip} (#{name.strip})."
               end
             end
+          elsif line.include?("RAILS ENUM:") && current_table
+            # Parse: "  -- RAILS ENUM: status values: Active=1, Inactive=2, Deleted=3"
+            match = line.match(/RAILS ENUM:\s+(\S+)\s+values:\s+(.+)/)
+            next unless match
+
+            col = match[1]
+            pairs = match[2].split(",").map(&:strip)
+            pairs.each do |pair|
+              label, num = pair.split("=", 2)
+              next unless label && num
+
+              label_words = label.strip.downcase.split(/\W+/)
+              matched_word = words.find { |w| label_words.include?(w) || label.strip.downcase == w || label.strip.downcase.start_with?(w) || w.start_with?(label.strip.downcase) }
+              if matched_word
+                hints << "The user mentions \"#{matched_word}\". In the #{current_table} table, use WHERE #{col} = #{num.strip} (#{label.strip})."
+              end
+            end
           end
         end
 
         hints.uniq
+      end
+
+      # Extract RAILS ENUM annotations from a schema string for the answer prompt.
+      # Returns a string like:
+      #   "contractors.status: Active=1, Inactive=2, Deleted=3\njobs.status: Active=1, ..."
+      def extract_enum_context(schema_text = nil)
+        source = schema_text || @summary_text
+        return "" if source.empty?
+
+        lines = []
+        current_table = nil
+
+        source.split("\n").each do |line|
+          if line.start_with?("TABLE ")
+            current_table = line.match(/^TABLE (\S+)/)[1]
+          elsif line.include?("RAILS ENUM:") && current_table
+            match = line.match(/RAILS ENUM:\s+(\S+)\s+values:\s+(.+)/)
+            next unless match
+            lines << "#{current_table}.#{match[1]}: #{match[2]}"
+          end
+        end
+
+        lines.join("\n")
       end
 
       # Returns a short string listing all known table names.
@@ -180,6 +221,14 @@ module SqlChatbot
         end
 
         @summary_text = result.join("\n")
+
+        # Also update per-table schemas so select_schema() includes the annotations
+        annotations_by_table.each do |table, annotations|
+          next unless @per_table_schemas.key?(table)
+          annotations.each do |ann|
+            @per_table_schemas[table] += "\n#{ann}"
+          end
+        end
       end
 
       # Introspect the database and build a schema summary string with enrichment
@@ -548,18 +597,22 @@ module SqlChatbot
             t.sub(/s$/, ''),
           ]
           variant_match = variants.find { |v| table_set.include?(v) }
-          if variant_match
-            matched.add(variant_match)
-            next
+          matched.add(variant_match) if variant_match
+
+          # 3. Prefix match on table names (e.g., "job" also matches "job_types", "job_offers")
+          @tables.each do |tbl|
+            matched.add(tbl) if tbl.start_with?("#{t}_")
           end
 
-          # 3. Column name exact match
+          # 4. Column name exact match (skip if we already found tables)
+          next unless matched.empty? || !variant_match
+
           if @table_index.key?(t)
             @table_index[t].each { |tbl| matched.add(tbl) }
             next
           end
 
-          # 4. Substring match on column names
+          # 5. Substring match on column names
           @table_index.each do |col_name, tables|
             if col_name.include?(t) || t.include?(col_name)
               tables.each { |tbl| matched.add(tbl) }

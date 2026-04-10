@@ -795,4 +795,105 @@ RSpec.describe SqlChatbot::Services::SchemaService do
       expect(service.summary).to eq(original)
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # #find_lookup_hints — RAILS ENUM support
+  # ---------------------------------------------------------------------------
+  describe "#find_lookup_hints with RAILS ENUM" do
+    let(:schema_with_enums) do
+      <<~SCHEMA
+        TABLE contractors
+          id INT PK
+          name VARCHAR
+          status INT
+          -- RAILS ENUM: status values: Active=1, Inactive=2, Deleted=3, Suspended=13
+        TABLE jobs
+          id INT PK
+          status INT
+          -- RAILS ENUM: status values: Active=1, Completed=11, Canceled=12, Disputed=15, Finished=16
+          -- FK LOOKUP: job_type_id values: 1=Snow Removal, 2=Lawn Mowing
+      SCHEMA
+    end
+
+    before do
+      service.instance_variable_set(:@summary_text, schema_with_enums)
+    end
+
+    it "matches RAILS ENUM values by keyword" do
+      hints = service.find_lookup_hints("show me active contractors")
+      expect(hints).to include(a_string_matching(/status = 1.*Active/))
+    end
+
+    it "matches 'disputed' to the enum value" do
+      hints = service.find_lookup_hints("how many disputed jobs?")
+      expect(hints).to include(a_string_matching(/status = 15.*Disputed/))
+    end
+
+    it "matches 'completed' to the enum value" do
+      hints = service.find_lookup_hints("show completed jobs")
+      expect(hints).to include(a_string_matching(/status = 11.*Completed/))
+    end
+
+    it "matches 'inactive' to the enum value" do
+      hints = service.find_lookup_hints("how many inactive contractors?")
+      expect(hints).to include(a_string_matching(/status = 2.*Inactive/))
+    end
+
+    it "returns both FK LOOKUP and RAILS ENUM hints" do
+      hints = service.find_lookup_hints("show completed snow removal jobs")
+      expect(hints).to include(a_string_matching(/status = 11.*Completed/))
+      expect(hints).to include(a_string_matching(/job_type_id = 1.*Snow Removal/))
+    end
+
+    it "returns empty for unrelated questions" do
+      hints = service.find_lookup_hints("how many customers?")
+      expect(hints).to be_empty
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # #extract_enum_context
+  # ---------------------------------------------------------------------------
+  describe "#extract_enum_context" do
+    let(:schema_with_enums) do
+      <<~SCHEMA
+        TABLE contractors
+          id INT PK
+          status INT
+          -- RAILS ENUM: status values: Active=1, Inactive=2, Deleted=3
+        TABLE jobs
+          id INT PK
+          status INT
+          -- RAILS ENUM: status values: Active=1, Completed=11, Finished=16
+          -- FK LOOKUP: job_type_id values: 1=Snow, 2=Lawn
+      SCHEMA
+    end
+
+    before do
+      service.instance_variable_set(:@summary_text, schema_with_enums)
+    end
+
+    it "extracts RAILS ENUM annotations as table.column: values format" do
+      result = service.extract_enum_context
+      expect(result).to include("contractors.status: Active=1, Inactive=2, Deleted=3")
+      expect(result).to include("jobs.status: Active=1, Completed=11, Finished=16")
+    end
+
+    it "does not include FK LOOKUP annotations" do
+      result = service.extract_enum_context
+      expect(result).not_to include("FK LOOKUP")
+      expect(result).not_to include("job_type_id")
+    end
+
+    it "accepts a schema string parameter" do
+      custom = "TABLE foo\n  -- RAILS ENUM: bar values: X=1, Y=2"
+      result = service.extract_enum_context(custom)
+      expect(result).to eq("foo.bar: X=1, Y=2")
+    end
+
+    it "returns empty string when no enums" do
+      result = service.extract_enum_context("TABLE foo\n  id INT PK")
+      expect(result).to eq("")
+    end
+  end
 end

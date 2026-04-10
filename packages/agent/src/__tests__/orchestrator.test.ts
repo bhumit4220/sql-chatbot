@@ -40,6 +40,8 @@ function createMockSchemaService(summary = 'TABLE users (id INT PK, name VARCHAR
     getSummary: vi.fn(() => summary),
     getTableNames: vi.fn(() => 'Available tables: users'),
     selectSchema: vi.fn(() => summary),
+    extractEnumContext: vi.fn(() => ''),
+    findLookupHints: vi.fn(() => []),
     tableCount: vi.fn(() => 1),
     discover: vi.fn(),
     refresh: vi.fn(),

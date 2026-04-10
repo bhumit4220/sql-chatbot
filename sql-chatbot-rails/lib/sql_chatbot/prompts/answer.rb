@@ -56,7 +56,7 @@ module SqlChatbot
         P
       }.freeze
 
-      def self.build_messages(question:, type:, history: [], sql_result: nil, sql_query: nil, code_snippets: nil, page_context: nil, navigation_links: nil, route_list: nil)
+      def self.build_messages(question:, type:, history: [], sql_result: nil, sql_query: nil, code_snippets: nil, page_context: nil, navigation_links: nil, route_list: nil, enum_context: nil)
         system_prompt = SYSTEM_PROMPTS[type] || SYSTEM_PROMPTS["data"]
 
         # Inject custom_context so the LLM can translate status codes, IDs, etc.
@@ -65,6 +65,11 @@ module SqlChatbot
           if custom && !custom.strip.empty?
             system_prompt = system_prompt + "\n\nDOMAIN CONTEXT (use this to translate codes/IDs to human-readable labels):\n#{custom}"
           end
+        end
+
+        # Inject auto-detected enum mappings so the LLM can translate integer codes to labels
+        if enum_context && !enum_context.strip.empty? && (type == "data" || type == "data_with_code")
+          system_prompt = system_prompt + "\n\nENUM MAPPINGS (use these to translate integer status/type codes to human-readable labels):\n#{enum_context}"
         end
 
         user_content = ""

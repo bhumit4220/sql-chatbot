@@ -289,6 +289,97 @@ export class SchemaService {
     return `Available tables: ${this.tables.join(', ')}`;
   }
 
+  /**
+   * Scan FK LOOKUP and RAILS ENUM annotations for values that match words in the question.
+   * Returns array of hint strings like:
+   *   "The user mentions 'movies'. In the titles table, use WHERE category_id = 2 (Movie)."
+   *   "The user mentions 'active'. In the contractors table, use WHERE status = 1 (Active)."
+   */
+  findLookupHints(question: string): string[] {
+    if (!this.summary) return [];
+
+    const words = question.toLowerCase().split(/\W+/).filter(w => w.length > 0);
+    const hints: string[] = [];
+    let currentTable: string | null = null;
+
+    for (const line of this.summary.split('\n')) {
+      const tableMatch = line.match(/^TABLE (\S+)/);
+      if (tableMatch) {
+        currentTable = tableMatch[1];
+      } else if (line.includes('FK LOOKUP:') && currentTable) {
+        // Parse: "  -- FK LOOKUP: category_id values: 1=Tv Shows, 2=Movie, 3=Action"
+        const match = line.match(/FK LOOKUP:\s+(\S+).*?values:\s+(.+)/);
+        if (!match) continue;
+
+        const fkCol = match[1];
+        const pairs = match[2].split(',').map(s => s.trim());
+        for (const pair of pairs) {
+          const [id, name] = pair.split('=', 2);
+          if (!name) continue;
+
+          const nameWords = name.trim().toLowerCase().split(/\W+/);
+          const nameLower = name.trim().toLowerCase();
+          const matchedWord = words.find(w =>
+            nameWords.includes(w) || nameLower === w ||
+            nameLower.startsWith(w) || w.startsWith(nameLower)
+          );
+          if (matchedWord) {
+            hints.push(`The user mentions "${matchedWord}". In the ${currentTable} table, use WHERE ${fkCol} = ${id.trim()} (${name.trim()}).`);
+          }
+        }
+      } else if (line.includes('RAILS ENUM:') && currentTable) {
+        // Parse: "  -- RAILS ENUM: status values: Active=1, Inactive=2, Deleted=3"
+        const match = line.match(/RAILS ENUM:\s+(\S+)\s+values:\s+(.+)/);
+        if (!match) continue;
+
+        const col = match[1];
+        const pairs = match[2].split(',').map(s => s.trim());
+        for (const pair of pairs) {
+          const [label, num] = pair.split('=', 2);
+          if (!label || !num) continue;
+
+          const labelWords = label.trim().toLowerCase().split(/\W+/);
+          const labelLower = label.trim().toLowerCase();
+          const matchedWord = words.find(w =>
+            labelWords.includes(w) || labelLower === w ||
+            labelLower.startsWith(w) || w.startsWith(labelLower)
+          );
+          if (matchedWord) {
+            hints.push(`The user mentions "${matchedWord}". In the ${currentTable} table, use WHERE ${col} = ${num.trim()} (${label.trim()}).`);
+          }
+        }
+      }
+    }
+
+    return [...new Set(hints)];
+  }
+
+  /**
+   * Extract RAILS ENUM annotations from a schema string for the answer prompt.
+   * Returns a string like:
+   *   "contractors.status: Active=1, Inactive=2, Deleted=3\njobs.status: Active=1, ..."
+   */
+  extractEnumContext(schemaText?: string): string {
+    const source = schemaText ?? this.summary;
+    if (!source) return '';
+
+    const lines: string[] = [];
+    let currentTable: string | null = null;
+
+    for (const line of source.split('\n')) {
+      const tableMatch = line.match(/^TABLE (\S+)/);
+      if (tableMatch) {
+        currentTable = tableMatch[1];
+      } else if (line.includes('RAILS ENUM:') && currentTable) {
+        const match = line.match(/RAILS ENUM:\s+(\S+)\s+values:\s+(.+)/);
+        if (!match) continue;
+        lines.push(`${currentTable}.${match[1]}: ${match[2]}`);
+      }
+    }
+
+    return lines.join('\n');
+  }
+
   selectSchema(terms: string[]): string {
     if (this.perTableSchemas.size === 0) return this.summary;
 
