@@ -393,6 +393,345 @@ RSpec.describe SqlChatbot::Services::SchemaService do
   end
 
   # ---------------------------------------------------------------------------
+  # #table_names
+  # ---------------------------------------------------------------------------
+  describe "#table_names" do
+    it "returns empty string before discover" do
+      expect(service.table_names).to eq("")
+    end
+
+    it "returns comma-separated list of table names after indexes are set" do
+      service.instance_variable_set(:@tables, %w[customers jobs job_types])
+      result = service.table_names
+      expect(result).to eq("Available tables: customers, jobs, job_types")
+    end
+
+    it "includes all tables in the list" do
+      service.instance_variable_set(:@tables, %w[customers jobs job_types invoices])
+      result = service.table_names
+      %w[customers jobs job_types invoices].each do |t|
+        expect(result).to include(t)
+      end
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # #select_schema
+  # ---------------------------------------------------------------------------
+  describe "#select_schema" do
+    # Set up a minimal fake schema with 4 tables:
+    #   customers — stand-alone hub with many FKs pointing to it
+    #   jobs      — has customer_id (FK to customers) and job_type_id (FK to job_types)
+    #   job_types — lookup table referenced by jobs
+    #   invoices  — has customer_id (FK to customers), has a rating column
+    #
+    # FK graph (bidirectional):
+    #   customers <-> jobs (via jobs.customer_id)
+    #   job_types <-> jobs (via jobs.job_type_id)
+    #   customers <-> invoices (via invoices.customer_id)
+
+    let(:per_table_schemas) do
+      {
+        "customers" => "TABLE customers (id BIGINT PK, name VARCHAR, email VARCHAR)\n  -- SOFT DELETE: filter deleted_at IS NULL for active records",
+        "jobs"      => "TABLE jobs (id BIGINT PK, customer_id BIGINT FK=>customers.id, job_type_id BIGINT FK=>job_types.id, status VARCHAR)\n  -- RAILS ENUM: status values: Active=1, Closed=2",
+        "job_types" => "TABLE job_types (id BIGINT PK, name VARCHAR)\n  -- VALUES: 1=Plumbing, 2=HVAC",
+        "invoices"  => "TABLE invoices (id BIGINT PK, customer_id BIGINT FK=>customers.id, rating INT, total DECIMAL)",
+      }
+    end
+
+    let(:table_index) do
+      {
+        "id"           => %w[customers jobs job_types invoices],
+        "name"         => %w[customers job_types],
+        "email"        => ["customers"],
+        "customer_id"  => %w[jobs invoices],
+        "job_type_id"  => ["jobs"],
+        "status"       => ["jobs"],
+        "total"        => ["invoices"],
+        "rating"       => ["invoices"],
+      }
+    end
+
+    let(:fk_graph) do
+      {
+        "customers" => [
+          { from_col: "id", to_table: "jobs",     to_col: "customer_id" },
+          { from_col: "id", to_table: "invoices", to_col: "customer_id" },
+        ],
+        "jobs" => [
+          { from_col: "customer_id",  to_table: "customers", to_col: "id" },
+          { from_col: "job_type_id",  to_table: "job_types", to_col: "id" },
+        ],
+        "job_types" => [
+          { from_col: "id", to_table: "jobs", to_col: "job_type_id" },
+        ],
+        "invoices" => [
+          { from_col: "customer_id", to_table: "customers", to_col: "id" },
+        ],
+      }
+    end
+
+    before do
+      service.instance_variable_set(:@tables, %w[customers jobs job_types invoices])
+      service.instance_variable_set(:@per_table_schemas, per_table_schemas)
+      service.instance_variable_set(:@table_index, table_index)
+      service.instance_variable_set(:@fk_graph, fk_graph)
+    end
+
+    context "single table match" do
+      it "returns only the customers table when searching for 'customers'" do
+        result = service.select_schema(["customers"])
+        expect(result).to include("TABLE customers")
+        expect(result).not_to include("TABLE jobs")
+        expect(result).not_to include("TABLE invoices")
+      end
+
+      it "does not include unrelated tables" do
+        result = service.select_schema(["job_types"])
+        expect(result).to include("TABLE job_types")
+        expect(result).not_to include("TABLE customers")
+        expect(result).not_to include("TABLE invoices")
+      end
+    end
+
+    context "two directly connected tables" do
+      it "returns jobs and job_types without extra tables when they are directly connected" do
+        result = service.select_schema(%w[jobs job_types])
+        expect(result).to include("TABLE jobs")
+        expect(result).to include("TABLE job_types")
+        expect(result).not_to include("TABLE customers")
+        expect(result).not_to include("TABLE invoices")
+      end
+    end
+
+    context "bridge table discovery" do
+      it "includes jobs as bridge when searching for customers and job_types" do
+        result = service.select_schema(%w[customers job_types])
+        expect(result).to include("TABLE customers")
+        expect(result).to include("TABLE job_types")
+        expect(result).to include("TABLE jobs")
+      end
+    end
+
+    context "column name matching" do
+      it "returns invoices when searching by column name 'rating'" do
+        result = service.select_schema(["rating"])
+        expect(result).to include("TABLE invoices")
+      end
+
+      it "returns all tables with 'name' column when searching by 'name'" do
+        result = service.select_schema(["name"])
+        expect(result).to include("TABLE customers")
+        expect(result).to include("TABLE job_types")
+      end
+    end
+
+    context "singular/plural variant matching" do
+      it "matches 'customer' (singular) to 'customers' table" do
+        result = service.select_schema(["customer"])
+        expect(result).to include("TABLE customers")
+      end
+
+      it "matches plural term that resolves to the table" do
+        result = service.select_schema(["job_type"])
+        expect(result).to include("TABLE job_types")
+      end
+    end
+
+    context "fallback to hub tables" do
+      it "returns something when no terms match" do
+        result = service.select_schema(["completely_unknown_xyz"])
+        expect(result).not_to be_empty
+        expect(result).to include("TABLE")
+      end
+
+      it "prefers tables with most FK edges as hub tables" do
+        # customers has 2 edges, jobs has 2 edges, job_types has 1, invoices has 1
+        result = service.select_schema(["completely_unknown_xyz"])
+        # customers and jobs should appear (highest edge counts)
+        expect(result).to include("TABLE customers").or include("TABLE jobs")
+      end
+    end
+
+    context "annotations are preserved" do
+      it "includes SOFT DELETE annotation for selected table" do
+        result = service.select_schema(["customers"])
+        expect(result).to include("SOFT DELETE: filter deleted_at IS NULL")
+      end
+
+      it "includes RAILS ENUM annotation for selected table" do
+        result = service.select_schema(["jobs"])
+        expect(result).to include("RAILS ENUM: status values")
+      end
+
+      it "includes VALUES annotation for selected lookup table" do
+        result = service.select_schema(["job_types"])
+        expect(result).to include("VALUES: 1=Plumbing, 2=HVAC")
+      end
+    end
+
+    context "before discover is called" do
+      it "returns full summary_text as fallback" do
+        fresh = described_class.new
+        full = "TABLE customers (id BIGINT PK, name VARCHAR)"
+        fresh.instance_variable_set(:@summary_text, full)
+        expect(fresh.select_schema(["customers"])).to eq(full)
+      end
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Private: build_per_table_schemas
+  # ---------------------------------------------------------------------------
+  describe "#build_per_table_schemas (private)" do
+    it "splits lines into per-table chunks keyed by table name" do
+      lines = [
+        "TABLE customers (id BIGINT PK, name VARCHAR)",
+        "  -- SOFT DELETE: filter deleted_at IS NULL for active records",
+        "TABLE jobs (id BIGINT PK, status INT)",
+        "  -- RAILS ENUM: status values: Active=1",
+      ]
+      service.send(:build_per_table_schemas, lines)
+      schemas = service.instance_variable_get(:@per_table_schemas)
+
+      expect(schemas.keys).to contain_exactly("customers", "jobs")
+      expect(schemas["customers"]).to include("TABLE customers")
+      expect(schemas["customers"]).to include("SOFT DELETE")
+      expect(schemas["jobs"]).to include("TABLE jobs")
+      expect(schemas["jobs"]).to include("RAILS ENUM")
+      expect(schemas["customers"]).not_to include("TABLE jobs")
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Private: build_table_index
+  # ---------------------------------------------------------------------------
+  describe "#build_table_index (private)" do
+    it "maps column names to tables" do
+      columns_by_table = {
+        "customers" => [
+          { "column_name" => "id",    "data_type" => "bigint" },
+          { "column_name" => "email", "data_type" => "character varying" },
+        ],
+        "jobs" => [
+          { "column_name" => "id",          "data_type" => "bigint" },
+          { "column_name" => "customer_id", "data_type" => "bigint" },
+        ],
+      }
+      service.send(:build_table_index, columns_by_table)
+      idx = service.instance_variable_get(:@table_index)
+
+      expect(idx["id"]).to contain_exactly("customers", "jobs")
+      expect(idx["email"]).to eq(["customers"])
+      expect(idx["customer_id"]).to eq(["jobs"])
+    end
+
+    it "skips sensitive column names" do
+      columns_by_table = {
+        "users" => [
+          { "column_name" => "id",       "data_type" => "bigint" },
+          { "column_name" => "password", "data_type" => "character varying" },
+          { "column_name" => "api_key",  "data_type" => "character varying" },
+        ],
+      }
+      service.send(:build_table_index, columns_by_table)
+      idx = service.instance_variable_get(:@table_index)
+
+      expect(idx.keys).to include("id")
+      expect(idx.keys).not_to include("password")
+      expect(idx.keys).not_to include("api_key")
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Private: build_fk_graph
+  # ---------------------------------------------------------------------------
+  describe "#build_fk_graph (private)" do
+    let(:fk_rows) do
+      [
+        { "from_table" => "jobs", "from_column" => "customer_id",
+          "to_table" => "customers", "to_column" => "id" },
+      ]
+    end
+
+    let(:columns_by_table) do
+      {
+        "jobs" => [
+          { "column_name" => "id",          "data_type" => "bigint" },
+          { "column_name" => "customer_id", "data_type" => "bigint" },
+          { "column_name" => "job_type_id", "data_type" => "bigint" },
+        ],
+      }
+    end
+
+    let(:table_name_set) { Set.new(%w[customers jobs job_types]) }
+
+    it "adds forward and reverse edges for explicit FKs" do
+      service.send(:build_fk_graph, fk_rows, columns_by_table, table_name_set)
+      graph = service.instance_variable_get(:@fk_graph)
+
+      # Forward: jobs -> customers
+      expect(graph["jobs"]).to include(a_hash_including(from_col: "customer_id", to_table: "customers"))
+      # Reverse: customers -> jobs
+      expect(graph["customers"]).to include(a_hash_including(to_table: "jobs"))
+    end
+
+    it "adds convention-based edges for _id columns" do
+      service.send(:build_fk_graph, [], columns_by_table, table_name_set)
+      graph = service.instance_variable_get(:@fk_graph)
+
+      # job_type_id should resolve to job_types table
+      expect(graph["jobs"]).to include(a_hash_including(from_col: "job_type_id", to_table: "job_types"))
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Private: find_join_path
+  # ---------------------------------------------------------------------------
+  describe "#find_join_path (private)" do
+    before do
+      service.instance_variable_set(:@fk_graph, {
+        "customers" => [
+          { from_col: "id", to_table: "jobs",     to_col: "customer_id" },
+        ],
+        "jobs" => [
+          { from_col: "customer_id",  to_table: "customers", to_col: "id" },
+          { from_col: "job_type_id",  to_table: "job_types", to_col: "id" },
+        ],
+        "job_types" => [
+          { from_col: "id", to_table: "jobs", to_col: "job_type_id" },
+        ],
+      })
+    end
+
+    it "returns [] for directly connected tables" do
+      expect(service.send(:find_join_path, "customers", "jobs")).to eq([])
+    end
+
+    it "returns [] for directly connected tables in reverse direction" do
+      expect(service.send(:find_join_path, "jobs", "customers")).to eq([])
+    end
+
+    it "returns bridge table for depth-2 path" do
+      result = service.send(:find_join_path, "customers", "job_types")
+      expect(result).to eq(["jobs"])
+    end
+
+    it "returns nil when no path exists within depth 2" do
+      service.instance_variable_set(:@fk_graph, {
+        "customers" => [{ from_col: "id", to_table: "invoices", to_col: "customer_id" }],
+        "invoices"  => [{ from_col: "customer_id", to_table: "customers", to_col: "id" }],
+      })
+      result = service.send(:find_join_path, "customers", "job_types")
+      expect(result).to be_nil
+    end
+
+    it "returns [] for same table" do
+      expect(service.send(:find_join_path, "customers", "customers")).to eq([])
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # #apply_soft_delete_annotations
   # ---------------------------------------------------------------------------
   describe "#apply_soft_delete_annotations" do

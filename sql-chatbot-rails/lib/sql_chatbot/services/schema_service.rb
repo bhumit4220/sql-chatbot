@@ -63,6 +63,9 @@ module SqlChatbot
       def initialize
         @summary_text = ""
         @tables = []
+        @per_table_schemas = {}
+        @table_index = {}
+        @fk_graph = {}
       end
 
       def summary
@@ -108,6 +111,46 @@ module SqlChatbot
         end
 
         hints.uniq
+      end
+
+      # Returns a short string listing all known table names.
+      # Used by the classify prompt so the LLM can see available tables without
+      # the full schema (~500 tokens vs ~275K chars for the full schema).
+      def table_names
+        return "" if @tables.empty?
+
+        "Available tables: #{@tables.join(', ')}"
+      end
+
+      # Given an array of search terms (e.g. ["customers"] or ["jobs", "job_types"]),
+      # returns a schema string containing ONLY the matching tables plus any tables
+      # needed to join them (bridge tables via FK paths, max depth 2).
+      #
+      # Falls back to hub tables (top 10 by FK edge count) when no terms match.
+      def select_schema(terms)
+        # If indexes are empty (discover not yet called), return full summary
+        return @summary_text if @per_table_schemas.empty?
+
+        selected = match_tables(terms)
+        selected = hub_tables(10) if selected.empty?
+
+        # Find join paths between all pairs to include bridge tables
+        table_set = Set.new(selected)
+        selected.to_a.combination(2).each do |from, to|
+          bridge = find_join_path(from, to)
+          table_set.merge(bridge) unless bridge.nil?
+        end
+
+        # Build schema string from selected tables (preserve original order)
+        result_lines = []
+        @tables.each do |table|
+          next unless table_set.include?(table)
+
+          schema_chunk = @per_table_schemas[table]
+          result_lines << schema_chunk if schema_chunk
+        end
+
+        result_lines.join("\n")
       end
 
       # Inject model-level annotations (from ModelIntrospector) into the schema summary.
@@ -278,6 +321,10 @@ module SqlChatbot
 
         @tables = table_names
         @summary_text = lines.join("\n")
+
+        build_per_table_schemas(lines)
+        build_table_index(columns_by_table)
+        build_fk_graph(fk_rows, columns_by_table, table_name_set)
       end
 
       # Re-discover schema (alias for discover)
@@ -381,6 +428,179 @@ module SqlChatbot
       end
 
       private
+
+      # -------------------------------------------------------------------
+      # Smart schema index builders (called at end of discover)
+      # -------------------------------------------------------------------
+
+      # Parse the lines array produced by discover() and split into per-table chunks.
+      # Each entry in @per_table_schemas is the full multi-line string for one table,
+      # including its TABLE header line and all annotation lines.
+      def build_per_table_schemas(lines)
+        @per_table_schemas = {}
+        current_table = nil
+        current_lines = []
+
+        lines.each do |line|
+          if line.start_with?("TABLE ")
+            # Flush previous table
+            if current_table
+              @per_table_schemas[current_table] = current_lines.join("\n")
+            end
+            current_table = line.match(/^TABLE (\S+)/)[1]
+            current_lines = [line]
+          else
+            current_lines << line if current_table
+          end
+        end
+
+        # Flush last table
+        if current_table
+          @per_table_schemas[current_table] = current_lines.join("\n")
+        end
+      end
+
+      # Build an inverted index: column_name => [table_names].
+      # Skips sensitive columns so they can't be used as search hints.
+      def build_table_index(columns_by_table)
+        @table_index = {}
+        columns_by_table.each do |table, columns|
+          columns.each do |col|
+            col_name = col["column_name"]
+            next if self.class.sensitive?(col_name)
+
+            (@table_index[col_name] ||= []) << table
+          end
+        end
+      end
+
+      # Build a bidirectional FK graph: table_name => [{from_col:, to_table:, to_col:}]
+      # Includes both explicit FK constraints and convention-based _id columns.
+      def build_fk_graph(fk_rows, columns_by_table, table_name_set)
+        @fk_graph = {}
+
+        # Explicit FK constraints (both directions)
+        fk_rows.each do |r|
+          from_table = r["from_table"]
+          to_table   = r["to_table"]
+          from_col   = r["from_column"]
+          to_col     = r["to_column"]
+
+          # Forward: from_table -> to_table
+          (@fk_graph[from_table] ||= []) << { from_col: from_col, to_table: to_table, to_col: to_col }
+          # Reverse: to_table -> from_table
+          (@fk_graph[to_table] ||= []) << { from_col: to_col, to_table: from_table, to_col: from_col }
+        end
+
+        # Convention-based: *_id columns that resolve to a table name
+        columns_by_table.each do |table, columns|
+          columns.each do |col|
+            col_name = col["column_name"]
+            next unless col_name.end_with?("_id")
+
+            base = col_name[0..-4] # remove '_id'
+            candidates = [
+              "#{base}s",
+              "#{base.sub(/y$/, 'ie')}s",
+              "#{base}es",
+              base,
+            ]
+            candidates.each do |candidate|
+              next unless table_name_set.include?(candidate)
+
+              # Add forward edge if not already present from explicit FKs
+              existing = (@fk_graph[table] ||= [])
+              already = existing.any? { |e| e[:from_col] == col_name && e[:to_table] == candidate }
+              unless already
+                existing << { from_col: col_name, to_table: candidate, to_col: "id" }
+                (@fk_graph[candidate] ||= []) << { from_col: "id", to_table: table, to_col: col_name }
+              end
+              break
+            end
+          end
+        end
+      end
+
+      # Match an array of search terms to table names.
+      # Tries (in order): exact table name, singular/plural variants, column name match,
+      # substring match on column names.
+      # Returns a Set of matching table names.
+      def match_tables(terms)
+        matched = Set.new
+        table_set = Set.new(@tables)
+
+        terms.each do |term|
+          t = term.to_s.downcase.strip
+          next if t.empty?
+
+          # 1. Exact table name match
+          if table_set.include?(t)
+            matched.add(t)
+            next
+          end
+
+          # 2. Singular/plural variants
+          variants = [
+            "#{t}s",
+            "#{t.sub(/y$/, 'ie')}s",
+            "#{t}es",
+            t.sub(/ies$/, 'y'),
+            t.sub(/s$/, ''),
+          ]
+          variant_match = variants.find { |v| table_set.include?(v) }
+          if variant_match
+            matched.add(variant_match)
+            next
+          end
+
+          # 3. Column name exact match
+          if @table_index.key?(t)
+            @table_index[t].each { |tbl| matched.add(tbl) }
+            next
+          end
+
+          # 4. Substring match on column names
+          @table_index.each do |col_name, tables|
+            if col_name.include?(t) || t.include?(col_name)
+              tables.each { |tbl| matched.add(tbl) }
+            end
+          end
+        end
+
+        matched
+      end
+
+      # Return the top N tables by FK edge count (most-connected = hub tables).
+      # Used as fallback when no search terms match any table.
+      def hub_tables(limit)
+        sorted = @tables.sort_by { |t| -(@fk_graph[t]&.length || 0) }
+        Set.new(sorted.first(limit))
+      end
+
+      # BFS to find shortest FK join path between two tables (max depth 2).
+      # Returns:
+      #   []   — tables are directly connected (no bridge needed)
+      #   [t]  — one bridge table t is needed
+      #   nil  — no path found within max depth
+      def find_join_path(from, to)
+        return [] if from == to
+
+        # Depth 1: direct edge
+        neighbors_from = (@fk_graph[from] || []).map { |e| e[:to_table] }
+        return [] if neighbors_from.include?(to)
+
+        # Depth 2: one bridge table
+        neighbors_from.each do |bridge|
+          bridge_neighbors = (@fk_graph[bridge] || []).map { |e| e[:to_table] }
+          return [bridge] if bridge_neighbors.include?(to)
+        end
+
+        nil
+      end
+
+      # -------------------------------------------------------------------
+      # Legacy detection helpers (also called from discover loop above)
+      # -------------------------------------------------------------------
 
       # Detect polymorphic associations: _type VARCHAR/TEXT + _id INT/BIGINT pairs.
       # Returns array of prefix strings (e.g., ["commentable", "taggable"]).
