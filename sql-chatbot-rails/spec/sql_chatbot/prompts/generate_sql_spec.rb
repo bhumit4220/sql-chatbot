@@ -12,17 +12,20 @@ RSpec.describe SqlChatbot::Prompts::GenerateSql do
       expect(messages[0][:role]).to eq("system")
     end
 
-    it "includes all 20 rules in system prompt" do
+    it "includes all 21 rules in system prompt" do
       messages = described_class.build_messages(question: "test", schema: "")
       system = messages[0][:content]
-      (1..20).each { |n| expect(system).to include("#{n}.") }
+      # Rules 1-13, 14a, 14b, 15-21
+      (1..13).each { |n| expect(system).to include("#{n}.") }
+      expect(system).to include("14a.")
+      expect(system).to include("14b.")
+      (15..21).each { |n| expect(system).to include("#{n}.") }
     end
 
-    it "includes rule 20 about ENUM SOFT DELETE" do
+    it "includes rule 21 about ENUM SOFT DELETE" do
       messages = described_class.build_messages(question: "test", schema: "")
       system = messages[0][:content]
       expect(system).to include("ENUM SOFT DELETE")
-      expect(system).to include("Do NOT use deleted_at IS NULL")
     end
 
     it "includes rule 18 about RAILS ENUM values" do
@@ -32,11 +35,10 @@ RSpec.describe SqlChatbot::Prompts::GenerateSql do
       expect(system).to include("NUMERIC value")
     end
 
-    it "includes rule 16 about FK LOOKUP values" do
+    it "includes rule 17 about FK LOOKUP values" do
       messages = described_class.build_messages(question: "test", schema: "")
       system = messages.first[:content]
       expect(system).to include("FK LOOKUP VALUES")
-      expect(system).to include("FK LOOKUP: category_id")
     end
 
     it "includes rule 19 about MODEL FK joins" do

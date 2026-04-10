@@ -195,7 +195,7 @@ describe('buildAnswerMessages', () => {
     });
 
     const systemContent = messages[0].content as string;
-    expect(systemContent).toContain('greeting');
+    expect(systemContent).toContain('Greet');
     expect(systemContent).toContain('help');
   });
 

@@ -45,8 +45,7 @@ module SqlChatbot
               question: question,
               schema_summary: schema_summary,
               page_context: page_context,
-              history: history,
-              route_list: build_route_list
+              history: history
             )
 
             raw = @llm.call(classify_messages, json_mode: true)
