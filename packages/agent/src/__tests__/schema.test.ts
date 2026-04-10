@@ -773,4 +773,72 @@ describe('SchemaService', () => {
       expect(summary).toContain('-- ENUM: status values: Active, Inactive');
     });
   });
+
+  describe('getTableNames', () => {
+    it('returns comma-separated table names', () => {
+      const svc = new SchemaService();
+      (svc as any).tables = ['customers', 'jobs', 'job_types'];
+      expect(svc.getTableNames()).toBe('Available tables: customers, jobs, job_types');
+    });
+
+    it('returns empty string before discover', () => {
+      const svc = new SchemaService();
+      expect(svc.getTableNames()).toBe('');
+    });
+  });
+
+  describe('selectSchema', () => {
+    let svc: SchemaService;
+
+    beforeEach(() => {
+      svc = new SchemaService();
+      (svc as any).perTableSchemas = new Map([
+        ['customers', 'TABLE customers (id BIGINT PK, email VARCHAR, status INT)\n  -- RAILS ENUM: status values: Active=1'],
+        ['jobs', 'TABLE jobs (id BIGINT PK, customer_id BIGINT FK=>customers.id, job_type_id BIGINT FK=>job_types.id)'],
+        ['job_types', 'TABLE job_types (id BIGINT PK, title VARCHAR)'],
+        ['contractors', 'TABLE contractors (id BIGINT PK, avg_rating DECIMAL)'],
+      ]);
+      (svc as any).tableIndex = new Map([
+        ['email', ['customers']], ['status', ['customers', 'jobs']],
+        ['customer_id', ['jobs']], ['job_type_id', ['jobs']],
+        ['title', ['job_types']], ['avg_rating', ['contractors']],
+      ]);
+      (svc as any).fkGraph = new Map([
+        ['jobs', [{ fromCol: 'customer_id', toTable: 'customers', toCol: 'id' }, { fromCol: 'job_type_id', toTable: 'job_types', toCol: 'id' }]],
+        ['customers', [{ fromCol: 'id', toTable: 'jobs', toCol: 'customer_id' }]],
+        ['job_types', [{ fromCol: 'id', toTable: 'jobs', toCol: 'job_type_id' }]],
+      ]);
+      (svc as any).tables = ['customers', 'jobs', 'job_types', 'contractors'];
+    });
+
+    it('selects only matched tables', () => {
+      const result = svc.selectSchema(['customers']);
+      expect(result).toContain('TABLE customers');
+      expect(result).not.toContain('TABLE jobs');
+    });
+
+    it('selects connected tables', () => {
+      const result = svc.selectSchema(['jobs', 'job_types']);
+      expect(result).toContain('TABLE jobs');
+      expect(result).toContain('TABLE job_types');
+      expect(result).not.toContain('TABLE customers');
+    });
+
+    it('finds bridge tables', () => {
+      const result = svc.selectSchema(['customers', 'job_types']);
+      expect(result).toContain('TABLE customers');
+      expect(result).toContain('TABLE job_types');
+      expect(result).toContain('TABLE jobs');
+    });
+
+    it('matches column names', () => {
+      const result = svc.selectSchema(['rating']);
+      expect(result).toContain('TABLE contractors');
+    });
+
+    it('includes annotations', () => {
+      const result = svc.selectSchema(['customers']);
+      expect(result).toContain('RAILS ENUM');
+    });
+  });
 });

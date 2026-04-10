@@ -108,9 +108,10 @@ export class Orchestrator {
     yield { type: 'classifying' };
 
     const schemaSummary = this.schemaService.getSummary();
+    const tableNames = this.schemaService.getTableNames();
     const classifyMessages = buildClassifyMessages({
       question: input.question,
-      schemaSummary,
+      schemaSummary: tableNames || schemaSummary,
       pageContext: input.pageContext,
       history,
     });
@@ -233,8 +234,11 @@ export class Orchestrator {
     const codeContext = this.formatCodeContext(allCodeResults);
     const codeSnippets = this.toCodeSnippets(allCodeResults);
 
-    // Delegate to handleData with code context
-    yield* this.handleData(input, history, schemaSummary, codeContext, codeSnippets);
+    // Use smart schema selection for SQL generation
+    const selectedSchema = this.schemaService.selectSchema(searchTerms ?? []);
+
+    // Delegate to handleData with code context and selected schema
+    yield* this.handleData(input, history, selectedSchema || schemaSummary, codeContext, codeSnippets);
   }
 
   private async *handleCode(

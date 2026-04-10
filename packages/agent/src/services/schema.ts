@@ -61,6 +61,9 @@ interface ForeignKey {
 export class SchemaService {
   private summary = '';
   private tables: string[] = [];
+  private perTableSchemas: Map<string, string> = new Map();
+  private tableIndex: Map<string, string[]> = new Map();
+  private fkGraph: Map<string, Array<{ fromCol: string; toTable: string; toCol: string }>> = new Map();
 
   async discover(databaseUrl: string): Promise<void> {
     const pool = new Pool({ connectionString: databaseUrl });
@@ -265,6 +268,9 @@ export class SchemaService {
 
       this.tables = tableNames;
       this.summary = lines.join('\n');
+      this.buildPerTableSchemas(lines);
+      this.buildTableIndex(columnsRes.rows);
+      this.buildFkGraph(fksRes.rows, columnsRes.rows, new Set(tableNames));
     } finally {
       await pool.end();
     }
@@ -276,6 +282,199 @@ export class SchemaService {
 
   tableCount(): number {
     return this.tables.length;
+  }
+
+  getTableNames(): string {
+    if (this.tables.length === 0) return '';
+    return `Available tables: ${this.tables.join(', ')}`;
+  }
+
+  selectSchema(terms: string[]): string {
+    if (this.perTableSchemas.size === 0) return this.summary;
+
+    // Step 1: Match terms to tables
+    const matched = this.matchTables(terms);
+
+    // Step 2: Fallback to hub tables if no matches
+    if (matched.size === 0) {
+      const hubs = this.hubTables(10);
+      hubs.forEach(t => matched.add(t));
+    }
+
+    // Step 3: Find FK join paths between matched tables
+    const allTables = new Set(matched);
+    const matchedArr = Array.from(matched);
+    for (let i = 0; i < matchedArr.length; i++) {
+      for (let j = i + 1; j < matchedArr.length; j++) {
+        const bridge = this.findJoinPath(matchedArr[i], matchedArr[j]);
+        if (bridge) bridge.forEach(t => allTables.add(t));
+      }
+    }
+
+    // Step 4: Build schema string for selected tables
+    return Array.from(allTables)
+      .map(t => this.perTableSchemas.get(t))
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
+  private matchTables(terms: string[]): Set<string> {
+    const matched = new Set<string>();
+    const lowerTerms = terms.map(t => t.toLowerCase());
+
+    for (const term of lowerTerms) {
+      for (const table of this.tables) {
+        // Exact table name match
+        if (table === term) {
+          matched.add(table);
+          continue;
+        }
+        // Singular/plural match
+        if (this.singularize(table) === term || this.pluralize(table) === term ||
+            this.singularize(term) === table || this.pluralize(term) === table) {
+          matched.add(table);
+          continue;
+        }
+        // Substring match on table name
+        if (table.includes(term) || term.includes(table)) {
+          matched.add(table);
+          continue;
+        }
+      }
+
+      // Column name match: term matches a column name
+      for (const [colName, tables] of this.tableIndex) {
+        if (colName.includes(term) || term.includes(colName)) {
+          for (const t of tables) matched.add(t);
+        }
+      }
+    }
+
+    return matched;
+  }
+
+  private hubTables(limit: number): string[] {
+    const edgeCounts = new Map<string, number>();
+    for (const table of this.tables) {
+      edgeCounts.set(table, this.fkGraph.get(table)?.length ?? 0);
+    }
+    return this.tables
+      .slice()
+      .sort((a, b) => (edgeCounts.get(b) ?? 0) - (edgeCounts.get(a) ?? 0))
+      .slice(0, limit);
+  }
+
+  private findJoinPath(from: string, to: string, maxDepth = 2): string[] | null {
+    if (from === to) return [];
+
+    // BFS
+    const queue: Array<{ table: string; path: string[] }> = [{ table: from, path: [] }];
+    const visited = new Set<string>([from]);
+
+    while (queue.length > 0) {
+      const { table, path } = queue.shift()!;
+      if (path.length >= maxDepth) continue;
+
+      const edges = this.fkGraph.get(table) ?? [];
+      for (const edge of edges) {
+        const neighbor = edge.toTable;
+        if (neighbor === to) {
+          return path; // bridge tables (excluding from and to)
+        }
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          queue.push({ table: neighbor, path: [...path, neighbor] });
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private buildPerTableSchemas(lines: string[]): void {
+    this.perTableSchemas.clear();
+    let currentTable: string | null = null;
+    const tableLines: string[] = [];
+
+    const flush = () => {
+      if (currentTable && tableLines.length > 0) {
+        this.perTableSchemas.set(currentTable, tableLines.join('\n'));
+      }
+    };
+
+    for (const line of lines) {
+      const match = line.match(/^TABLE (\w+)/);
+      if (match) {
+        flush();
+        currentTable = match[1];
+        tableLines.length = 0;
+        tableLines.push(line);
+      } else if (currentTable) {
+        tableLines.push(line);
+      }
+    }
+    flush();
+  }
+
+  private buildTableIndex(rows: ColumnInfo[]): void {
+    this.tableIndex.clear();
+    for (const row of rows) {
+      const col = row.column_name;
+      if (!this.tableIndex.has(col)) {
+        this.tableIndex.set(col, []);
+      }
+      this.tableIndex.get(col)!.push(row.table_name);
+    }
+  }
+
+  private buildFkGraph(
+    fkRows: ForeignKey[],
+    _colRows: ColumnInfo[],
+    tableNames: Set<string>,
+  ): void {
+    this.fkGraph.clear();
+
+    // Initialize all tables
+    for (const table of tableNames) {
+      this.fkGraph.set(table, []);
+    }
+
+    // Add bidirectional FK edges
+    for (const fk of fkRows) {
+      // Forward: from_table → to_table
+      if (!this.fkGraph.has(fk.from_table)) this.fkGraph.set(fk.from_table, []);
+      this.fkGraph.get(fk.from_table)!.push({
+        fromCol: fk.from_column,
+        toTable: fk.to_table,
+        toCol: fk.to_column,
+      });
+
+      // Reverse: to_table → from_table
+      if (!this.fkGraph.has(fk.to_table)) this.fkGraph.set(fk.to_table, []);
+      this.fkGraph.get(fk.to_table)!.push({
+        fromCol: fk.to_column,
+        toTable: fk.from_table,
+        toCol: fk.from_column,
+      });
+    }
+  }
+
+  private singularize(word: string): string {
+    if (word.endsWith('ies')) return word.slice(0, -3) + 'y';
+    if (word.endsWith('ses') || word.endsWith('xes') || word.endsWith('zes')) return word.slice(0, -2);
+    if (word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1);
+    return word;
+  }
+
+  private pluralize(word: string): string {
+    if (word.endsWith('y') && !['ay', 'ey', 'iy', 'oy', 'uy'].some(e => word.endsWith(e))) {
+      return word.slice(0, -1) + 'ies';
+    }
+    if (word.endsWith('s') || word.endsWith('x') || word.endsWith('z') ||
+        word.endsWith('ch') || word.endsWith('sh')) {
+      return word + 'es';
+    }
+    return word + 's';
   }
 
   private async discoverLookupValues(

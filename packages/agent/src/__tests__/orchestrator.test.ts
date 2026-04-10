@@ -38,6 +38,8 @@ async function collectEvents(gen: AsyncGenerator<SSEEvent>): Promise<SSEEvent[]>
 function createMockSchemaService(summary = 'TABLE users (id INT PK, name VARCHAR)'): SchemaService {
   return {
     getSummary: vi.fn(() => summary),
+    getTableNames: vi.fn(() => 'Available tables: users'),
+    selectSchema: vi.fn(() => summary),
     tableCount: vi.fn(() => 1),
     discover: vi.fn(),
     refresh: vi.fn(),
