@@ -192,16 +192,73 @@ export class Orchestrator {
       return;
     }
 
-    // Execute SQL
+    // Execute SQL (with two-tier retry on column errors)
     yield { type: 'executing' };
 
     let sqlResult;
+    // Track the SQL actually being executed (may be updated by retry)
+    let activeSql = validation.sql!;
+
     try {
-      sqlResult = await executeSql(this.databaseUrl, validation.sql!);
+      sqlResult = await executeSql(this.databaseUrl, activeSql);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      yield { type: 'error', message };
-      return;
+
+      // Only retry for column-reference errors
+      if (!this.isColumnError(message)) {
+        yield { type: 'error', message };
+        return;
+      }
+
+      // --- Strategy 1: Programmatic column fix (no LLM) ---
+      const fixedSql = this.tryFixColumn(message, activeSql, schemaSummary);
+      if (fixedSql) {
+        const fixedValidation = validateSql(fixedSql);
+        if (fixedValidation.valid) {
+          activeSql = fixedValidation.sql!;
+          yield { type: 'sql', sql: activeSql };
+          try {
+            sqlResult = await executeSql(this.databaseUrl, activeSql);
+          } catch (retryErr) {
+            const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
+            yield { type: 'error', message: retryMessage };
+            return;
+          }
+        } else {
+          // Fixed SQL still didn't validate — fall through to LLM retry
+        }
+      }
+
+      // --- Strategy 2: LLM retry ---
+      if (!sqlResult) {
+        const hint = this.buildColumnHint(message, activeSql, schemaSummary);
+        // Append error + hint as a new user turn so the LLM understands what went wrong
+        const retryMessages = [
+          ...sqlMessages,
+          { role: 'assistant' as const, content: sqlRaw },
+          { role: 'user' as const, content: `The query failed with: ${message}\n${hint}\nPlease fix the SQL query.` },
+        ];
+        const retryRaw = await callLLM(retryMessages, { jsonMode: true });
+        const retryParsed = this.parseSqlGeneration(retryRaw);
+        if (!retryParsed.sql) {
+          yield { type: 'error', message };
+          return;
+        }
+        const retryValidation = validateSql(retryParsed.sql);
+        if (!retryValidation.valid) {
+          yield { type: 'error', message: retryValidation.reason! };
+          return;
+        }
+        activeSql = retryValidation.sql!;
+        yield { type: 'sql', sql: activeSql };
+        try {
+          sqlResult = await executeSql(this.databaseUrl, activeSql);
+        } catch (retryErr) {
+          const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
+          yield { type: 'error', message: retryMessage };
+          return;
+        }
+      }
     }
 
     // Extract enum context from the selected schema for answer translation
@@ -213,7 +270,7 @@ export class Orchestrator {
       type: questionType,
       history,
       sqlResult: sqlResult.rows,
-      sqlQuery: sqlParsed.sql,
+      sqlQuery: activeSql,
       codeSnippets,
       pageContext: input.pageContext,
       enumContext: enumContext || undefined,
@@ -361,6 +418,141 @@ export class Orchestrator {
       // Non-JSON response — don't treat garbled text as SQL
       return { sql: '', explanation: '' };
     }
+  }
+
+  // ============================================================
+  // Column auto-fix helpers
+  // ============================================================
+
+  /**
+   * Returns true if the error message indicates an undefined column error
+   * (PostgreSQL error code 42703 / "column X does not exist").
+   */
+  private isColumnError(message: string): boolean {
+    return /column .+ does not exist/i.test(message);
+  }
+
+  /**
+   * Programmatic column fix — no LLM call.
+   *
+   * Given an error like `column jt.name does not exist` and the original SQL,
+   * finds the table backing alias `jt` (e.g. `FROM job_types jt`), looks up
+   * that table's columns in the schema string, and tries to replace the bad
+   * column with the best available alternative.
+   *
+   * Returns fixed SQL string or null if a fix cannot be determined.
+   */
+  private tryFixColumn(errorMessage: string, sql: string, schema: string): string | null {
+    // Extract alias and bad column from error: "column jt.name does not exist"
+    const colMatch = errorMessage.match(/column\s+(?:(\w+)\.)?(\w+)\s+does not exist/i);
+    if (!colMatch) return null;
+
+    const alias = colMatch[1] ?? null;    // e.g. "jt"
+    const badCol = colMatch[2];           // e.g. "name"
+
+    // Find the real table name from SQL for the given alias
+    let tableName: string | null = null;
+    if (alias) {
+      // Matches: FROM job_types jt  or  JOIN job_types jt
+      const tableMatch = sql.match(new RegExp(
+        `(?:FROM|JOIN)\\s+(\\w+)\\s+(?:AS\\s+)?${alias}\\b`,
+        'i'
+      ));
+      tableName = tableMatch ? tableMatch[1] : null;
+    }
+
+    // Find available columns for this table in the schema string
+    let availableCols: string[] = [];
+    if (tableName) {
+      // Find the TABLE block for this table in the schema
+      // Schema lines look like: "TABLE job_types (id INT PK, title VARCHAR, ...)"
+      // or multi-line blocks starting with "TABLE job_types"
+      const tableBlockMatch = schema.match(
+        new RegExp(`TABLE\\s+${tableName}[\\s\\S]*?(?=TABLE\\s+\\w|$)`, 'i')
+      );
+      if (tableBlockMatch) {
+        // Extract column names: words that appear before type keywords
+        const block = tableBlockMatch[0];
+        const colMatches = block.matchAll(/\b(\w+)\s+(?:INT|BIGINT|VARCHAR|TEXT|BOOLEAN|TIMESTAMP|DATE|NUMERIC|FLOAT|SERIAL|UUID|JSONB|JSON)\b/gi);
+        availableCols = [...colMatches].map((m) => m[1].toLowerCase());
+      }
+    }
+
+    if (availableCols.length === 0) return null;
+
+    // Preferred replacements for common "name" columns
+    const PREFERRED_ALTERNATIVES: Record<string, string[]> = {
+      name: ['title', 'label', 'first_name', 'display_name', 'description', 'full_name'],
+      full_name: ['name', 'title', 'first_name'],
+      label: ['name', 'title', 'description'],
+    };
+
+    const preferred = PREFERRED_ALTERNATIVES[badCol.toLowerCase()] ?? [];
+    let replacement: string | null = null;
+
+    // Try preferred alternatives first
+    for (const pref of preferred) {
+      if (availableCols.includes(pref)) {
+        replacement = pref;
+        break;
+      }
+    }
+
+    // Fall back to fuzzy: find shortest available column that contains the bad column as substring, or vice versa
+    if (!replacement) {
+      const fuzzy = availableCols.find(
+        (c) => c.includes(badCol.toLowerCase()) || badCol.toLowerCase().includes(c)
+      );
+      if (fuzzy) replacement = fuzzy;
+    }
+
+    if (!replacement) return null;
+
+    // Replace all occurrences of the bad reference in the SQL
+    // Handle both aliased (jt.name) and unqualified (name)
+    const pattern = alias
+      ? new RegExp(`\\b${alias}\\.${badCol}\\b`, 'gi')
+      : new RegExp(`\\b${badCol}\\b`, 'gi');
+
+    const fixed = sql.replace(pattern, alias ? `${alias}.${replacement}` : replacement);
+    return fixed === sql ? null : fixed;
+  }
+
+  /**
+   * Builds a hint string for LLM retry on column error.
+   *
+   * Example output:
+   * "HINT: Column 'name' does not exist. Table 'job_types' columns include: id, title, description."
+   */
+  private buildColumnHint(errorMessage: string, sql: string, schema: string): string {
+    const colMatch = errorMessage.match(/column\s+(?:(\w+)\.)?(\w+)\s+does not exist/i);
+    if (!colMatch) return `ERROR: ${errorMessage}`;
+
+    const alias = colMatch[1] ?? null;
+    const badCol = colMatch[2];
+
+    let tableName: string | null = null;
+    if (alias) {
+      const tableMatch = sql.match(new RegExp(
+        `(?:FROM|JOIN)\\s+(\\w+)\\s+(?:AS\\s+)?${alias}\\b`,
+        'i'
+      ));
+      tableName = tableMatch ? tableMatch[1] : null;
+    }
+
+    if (tableName) {
+      const tableBlockMatch = schema.match(
+        new RegExp(`TABLE\\s+${tableName}[\\s\\S]*?(?=TABLE\\s+\\w|$)`, 'i')
+      );
+      if (tableBlockMatch) {
+        const block = tableBlockMatch[0];
+        const colMatches = block.matchAll(/\b(\w+)\s+(?:INT|BIGINT|VARCHAR|TEXT|BOOLEAN|TIMESTAMP|DATE|NUMERIC|FLOAT|SERIAL|UUID|JSONB|JSON)\b/gi);
+        const cols = [...colMatches].map((m) => m[1]).join(', ');
+        return `HINT: Column '${badCol}' does not exist. Table '${tableName}' columns include: ${cols}.`;
+      }
+    }
+
+    return `HINT: Column '${badCol}' does not exist. Check the schema for the correct column name.`;
   }
 
   private formatCodeContext(results: SearchResult[]): string {

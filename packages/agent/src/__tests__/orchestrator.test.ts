@@ -524,6 +524,137 @@ describe('Orchestrator', () => {
     expect(events.some((e) => e.type === 'done')).toBe(true);
   });
 
+  // ============================================================
+  // SQL retry with column auto-fix
+  // ============================================================
+
+  // 13. Column error: tryFixColumn fixes it → two sql events, no error
+  it('13. retries with tryFixColumn on UndefinedColumn error', async () => {
+    const schema = 'TABLE job_types (id INT PK, title VARCHAR, description TEXT)\nTABLE users (id INT PK, name VARCHAR)';
+    schemaService = createMockSchemaService(schema);
+    orchestrator = new Orchestrator({ schemaService, codeIndexer, databaseUrl });
+
+    mockClassification('data');
+    mockSqlGeneration('SELECT jt.name FROM job_types jt LIMIT 100');
+    // First validate call: original SQL
+    mockValidateSql.mockReturnValueOnce({ valid: true, sql: 'SELECT jt.name FROM job_types jt LIMIT 100' });
+    // Second validate call: fixed SQL (name → title)
+    mockValidateSql.mockReturnValueOnce({ valid: true, sql: 'SELECT jt.title FROM job_types jt LIMIT 100' });
+
+    // First call fails with UndefinedColumn error, second call succeeds
+    mockExecuteSql
+      .mockRejectedValueOnce(new Error('column jt.name does not exist'))
+      .mockResolvedValueOnce({
+        columns: ['title'],
+        rows: [{ title: 'Engineer' }],
+        rowCount: 1,
+      });
+
+    mockStream('The job types are: Engineer.');
+
+    const input: AskInput = { question: 'List all job types' };
+    const events = await collectEvents(orchestrator.handleQuestion(input));
+
+    const types = events.map((e) => e.type);
+
+    // Should have two sql events (original + corrected)
+    const sqlEvents = events.filter((e) => e.type === 'sql');
+    expect(sqlEvents.length).toBe(2);
+
+    // First sql event has the original SQL
+    expect(sqlEvents[0].sql).toBe('SELECT jt.name FROM job_types jt LIMIT 100');
+
+    // Second sql event has the corrected SQL (name → title)
+    expect(String(sqlEvents[1].sql)).toContain('title');
+    expect(String(sqlEvents[1].sql)).not.toContain('jt.name');
+
+    // No error event
+    expect(types).not.toContain('error');
+
+    // executeSql called twice
+    expect(mockExecuteSql).toHaveBeenCalledTimes(2);
+
+    // Answer is streamed
+    expect(types).toContain('token');
+    expect(types).toContain('done');
+  });
+
+  // 14. Column error: tryFixColumn can't fix → LLM retry succeeds
+  it('14. retries with LLM when tryFixColumn cannot fix', async () => {
+    const schema = 'TABLE job_types (id INT PK, title VARCHAR, description TEXT)';
+    schemaService = createMockSchemaService(schema);
+    orchestrator = new Orchestrator({ schemaService, codeIndexer, databaseUrl });
+
+    mockClassification('data');
+    // Initial SQL generation
+    mockSqlGeneration('SELECT jt.nonexistentcolumn FROM job_types jt LIMIT 100');
+    mockValidateSql.mockReturnValue({ valid: true, sql: 'SELECT jt.nonexistentcolumn FROM job_types jt LIMIT 100' });
+
+    // First executeSql fails, second (after LLM retry) succeeds
+    mockExecuteSql
+      .mockRejectedValueOnce(new Error('column jt.nonexistentcolumn does not exist'))
+      .mockResolvedValueOnce({
+        columns: ['title'],
+        rows: [{ title: 'Engineer' }],
+        rowCount: 1,
+      });
+
+    // LLM retry generates fixed SQL (3rd callLLM call: classify + generate-sql + retry)
+    mockCallLLM.mockResolvedValueOnce(JSON.stringify({
+      sql: 'SELECT jt.title FROM job_types jt LIMIT 100',
+      explanation: 'Fixed column',
+    }));
+
+    // validateSql for the retry
+    mockValidateSql.mockReturnValue({ valid: true, sql: 'SELECT jt.title FROM job_types jt LIMIT 100' });
+
+    mockStream('The job types are: Engineer.');
+
+    const input: AskInput = { question: 'List all job types' };
+    const events = await collectEvents(orchestrator.handleQuestion(input));
+
+    const types = events.map((e) => e.type);
+
+    // Should have two sql events
+    const sqlEvents = events.filter((e) => e.type === 'sql');
+    expect(sqlEvents.length).toBe(2);
+
+    // No error event
+    expect(types).not.toContain('error');
+
+    // executeSql called twice
+    expect(mockExecuteSql).toHaveBeenCalledTimes(2);
+
+    // Answer is streamed
+    expect(types).toContain('token');
+    expect(types).toContain('done');
+  });
+
+  // 15. Non-column error: no retry, returns error immediately
+  it('15. does not retry on non-column errors (relation does not exist)', async () => {
+    mockClassification('data');
+    mockSqlGeneration('SELECT * FROM nonexistent_table');
+    mockValidateSql.mockReturnValue({ valid: true, sql: 'SELECT * FROM nonexistent_table' });
+    mockExecuteSql.mockRejectedValue(new Error('relation "nonexistent_table" does not exist'));
+
+    const input: AskInput = { question: 'Show nonexistent data' };
+    const events = await collectEvents(orchestrator.handleQuestion(input));
+
+    const types = events.map((e) => e.type);
+
+    // Only one sql event
+    const sqlEvents = events.filter((e) => e.type === 'sql');
+    expect(sqlEvents.length).toBe(1);
+
+    // Error returned immediately
+    expect(types).toContain('error');
+    const errorEvent = events.find((e) => e.type === 'error');
+    expect(errorEvent?.message).toContain('nonexistent_table');
+
+    // executeSql called only once
+    expect(mockExecuteSql).toHaveBeenCalledTimes(1);
+  });
+
   describe('manifest support', () => {
     it('stores manifest via setManifest', async () => {
       const schema = createMockSchemaService();
