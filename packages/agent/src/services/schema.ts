@@ -204,6 +204,16 @@ export class SchemaService {
         pool, fkTargetTables, columnsByTable, pkSet
       );
 
+      // Get approximate row counts for all tables (helps LLM distinguish data vs config tables)
+      const rowCountRes = await pool.query(
+        `SELECT relname, n_live_tup FROM pg_stat_user_tables WHERE schemaname = 'public'`
+      );
+      const rowCounts = new Map<string, number>(
+        rowCountRes.rows.map((r: { relname: string; n_live_tup: string }) =>
+          [r.relname, parseInt(r.n_live_tup, 10)]
+        )
+      );
+
       // Build summary lines
       const lines: string[] = [];
       for (const table of tableNames) {
@@ -260,7 +270,9 @@ export class SchemaService {
           annotations.push(`  -- VALUES: ${lookupValues.get(table)}`);
         }
 
-        lines.push(`TABLE ${table} (${colParts.join(', ')})`);
+        const count = rowCounts.get(table);
+        const countHint = count !== undefined ? ` (~${count} rows)` : '';
+        lines.push(`TABLE ${table}${countHint} (${colParts.join(', ')})`);
         for (const ann of annotations) {
           lines.push(ann);
         }

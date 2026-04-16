@@ -28,3 +28,8 @@ widget/dist/
 *.swo
 *~
 .worktrees/
+
+# Test screenshots & Playwright artifacts
+*.png
+.playwright-mcp/
+.mcp.json

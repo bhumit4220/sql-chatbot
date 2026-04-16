@@ -316,6 +316,9 @@ module SqlChatbot
         # Discover lookup values for small referenced tables
         lookup_values = discover_lookup_values(conn, fk_target_tables, columns_by_table, pk_set)
 
+        # Get approximate row counts for all tables (helps LLM distinguish data vs config tables)
+        row_counts = query_row_counts(conn)
+
         # Build summary lines
         lines = []
         table_names.each do |table|
@@ -377,7 +380,9 @@ module SqlChatbot
             annotations << "  -- VALUES: #{lookup_values[table]}"
           end
 
-          lines << "TABLE #{table} (#{col_parts.join(', ')})"
+          count = row_counts[table]
+          count_hint = count ? " (~#{count} rows)" : ""
+          lines << "TABLE #{table}#{count_hint} (#{col_parts.join(', ')})"
           annotations.each { |ann| lines << ann }
         end
 
@@ -783,6 +788,16 @@ module SqlChatbot
           FROM pg_constraint
           WHERE contype = 'c' AND connamespace = 'public'::regnamespace
         SQL
+      end
+
+      # Get approximate row counts for all tables from pg_stat_user_tables.
+      # Returns Hash of table_name => integer count.
+      def query_row_counts(conn)
+        conn.exec_query(<<~SQL).to_a.each_with_object({}) do |r, h|
+          SELECT relname, n_live_tup FROM pg_stat_user_tables WHERE schemaname = 'public'
+        SQL
+          h[r["relname"]] = r["n_live_tup"].to_i
+        end
       end
 
       # Query lookup values for small FK-target tables.
