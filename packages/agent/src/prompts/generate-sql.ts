@@ -6,6 +6,7 @@ export interface GenerateSqlInput {
   schema: string;
   codeContext?: string;
   history: ChatMessage[];
+  lookupHints?: string[];
 }
 
 export function buildGenerateSqlMessages(input: GenerateSqlInput): ChatCompletionMessageParam[] {
@@ -49,6 +50,11 @@ Respond with JSON only: {"sql": "<the SQL query>", "explanation": "<brief explan
     const recentHistory = input.history.slice(-4);
     const historyText = recentHistory.map((m) => `${m.role}: ${m.content}`).join('\n');
     userContent += `Conversation history:\n${historyText}\n\n`;
+  }
+  if (input.lookupHints && input.lookupHints.length > 0) {
+    userContent += `IMPORTANT LOOKUP HINTS (use these exact columns and IDs):\n`;
+    userContent += input.lookupHints.map((h) => `- ${h}`).join('\n');
+    userContent += '\n\n';
   }
   userContent += `Question: ${input.question}\n\nDatabase schema:\n${input.schema}`;
 

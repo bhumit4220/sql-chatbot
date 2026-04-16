@@ -162,4 +162,51 @@ describe('buildGenerateSqlMessages', () => {
     expect(systemContent).toContain('exact values (case-sensitive)');
     expect(systemContent).toContain('Never guess enum values');
   });
+
+  it('should include lookup hints in user content when provided', () => {
+    const hints = [
+      "The user mentions 'movies'. In the titles table, use WHERE category_id = 2 (Movie).",
+      "The user mentions 'active'. In the contractors table, use WHERE status = 1 (Active).",
+    ];
+
+    const messages = buildGenerateSqlMessages({
+      question: 'Show me active movies',
+      schema: baseSchema,
+      history: [],
+      lookupHints: hints,
+    });
+
+    const userContent = messages[1].content as string;
+    expect(userContent).toContain('IMPORTANT LOOKUP HINTS');
+    expect(userContent).toContain('use these exact columns and IDs');
+    expect(userContent).toContain(hints[0]);
+    expect(userContent).toContain(hints[1]);
+    // Hints should appear before the Question line
+    const hintsIndex = userContent.indexOf('IMPORTANT LOOKUP HINTS');
+    const questionIndex = userContent.indexOf('Question:');
+    expect(hintsIndex).toBeLessThan(questionIndex);
+  });
+
+  it('should not include lookup hints section when lookupHints is empty', () => {
+    const messages = buildGenerateSqlMessages({
+      question: 'test',
+      schema: baseSchema,
+      history: [],
+      lookupHints: [],
+    });
+
+    const userContent = messages[1].content as string;
+    expect(userContent).not.toContain('IMPORTANT LOOKUP HINTS');
+  });
+
+  it('should not include lookup hints section when lookupHints is not provided', () => {
+    const messages = buildGenerateSqlMessages({
+      question: 'test',
+      schema: baseSchema,
+      history: [],
+    });
+
+    const userContent = messages[1].content as string;
+    expect(userContent).not.toContain('IMPORTANT LOOKUP HINTS');
+  });
 });

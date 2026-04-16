@@ -167,11 +167,13 @@ export class Orchestrator {
     const questionType: QuestionType = codeContext ? 'data_with_code' : 'data';
 
     // Generate SQL
+    const lookupHints = this.schemaService.findLookupHints(input.question);
     const sqlMessages = buildGenerateSqlMessages({
       question: input.question,
       schema: schemaSummary,
       codeContext,
       history,
+      lookupHints: lookupHints.length > 0 ? lookupHints : undefined,
     });
     const sqlRaw = await callLLM(sqlMessages, { jsonMode: true });
     const sqlParsed = this.parseSqlGeneration(sqlRaw);
