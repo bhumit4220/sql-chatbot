@@ -129,7 +129,7 @@ describe('Orchestrator', () => {
 
     // Verify SQL event
     const sqlEvent = events.find((e) => e.type === 'sql');
-    expect(sqlEvent?.sql).toBe('SELECT COUNT(*) FROM users');
+    expect(sqlEvent?.query).toBe('SELECT COUNT(*) FROM users');
 
     // Verify token events
     const tokens = events.filter((e) => e.type === 'token').map((e) => e.content);
@@ -562,11 +562,11 @@ describe('Orchestrator', () => {
     expect(sqlEvents.length).toBe(2);
 
     // First sql event has the original SQL
-    expect(sqlEvents[0].sql).toBe('SELECT jt.name FROM job_types jt LIMIT 100');
+    expect(sqlEvents[0].query).toBe('SELECT jt.name FROM job_types jt LIMIT 100');
 
     // Second sql event has the corrected SQL (name → title)
-    expect(String(sqlEvents[1].sql)).toContain('title');
-    expect(String(sqlEvents[1].sql)).not.toContain('jt.name');
+    expect(String(sqlEvents[1].query)).toContain('title');
+    expect(String(sqlEvents[1].query)).not.toContain('jt.name');
 
     // No error event
     expect(types).not.toContain('error');

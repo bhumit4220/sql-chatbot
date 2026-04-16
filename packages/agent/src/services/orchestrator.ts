@@ -183,7 +183,7 @@ export class Orchestrator {
       return;
     }
 
-    yield { type: 'sql', sql: sqlParsed.sql };
+    yield { type: 'sql', query: sqlParsed.sql, explanation: sqlParsed.explanation };
 
     // Validate SQL
     const validation = validateSql(sqlParsed.sql);
@@ -216,7 +216,7 @@ export class Orchestrator {
         const fixedValidation = validateSql(fixedSql);
         if (fixedValidation.valid) {
           activeSql = fixedValidation.sql!;
-          yield { type: 'sql', sql: activeSql };
+          yield { type: 'sql', query: activeSql, explanation: '' };
           try {
             sqlResult = await executeSql(this.databaseUrl, activeSql);
           } catch (retryErr) {
@@ -250,7 +250,7 @@ export class Orchestrator {
           return;
         }
         activeSql = retryValidation.sql!;
-        yield { type: 'sql', sql: activeSql };
+        yield { type: 'sql', query: activeSql, explanation: retryParsed.explanation };
         try {
           sqlResult = await executeSql(this.databaseUrl, activeSql);
         } catch (retryErr) {
