@@ -400,65 +400,97 @@ export class SchemaService {
   selectSchema(terms: string[]): string {
     if (this.perTableSchemas.size === 0) return this.summary;
 
-    // Step 1: Match terms to tables
-    const matched = this.matchTables(terms);
+    // Step 1: Score tables by relevance to search terms
+    const scores = this.scoreTables(terms);
 
     // Step 2: Fallback to hub tables if no matches
-    if (matched.size === 0) {
-      const hubs = this.hubTables(10);
-      hubs.forEach(t => matched.add(t));
+    if (scores.size === 0) {
+      const hubs = this.hubTables(8);
+      for (const t of hubs) scores.set(t, 1);
     }
 
-    // Step 3: Find FK join paths between matched tables
-    const allTables = new Set(matched);
-    const matchedArr = Array.from(matched);
-    for (let i = 0; i < matchedArr.length; i++) {
-      for (let j = i + 1; j < matchedArr.length; j++) {
-        const bridge = this.findJoinPath(matchedArr[i], matchedArr[j]);
+    // Step 3: Take top 8 tables by score (cap to avoid overwhelming the LLM)
+    const MAX_PRIMARY = 8;
+    const topTables = Array.from(scores.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, MAX_PRIMARY)
+      .map(([t]) => t);
+
+    // Step 4: Find FK join paths between top tables (add bridge tables)
+    const allTables = new Set(topTables);
+    for (let i = 0; i < topTables.length; i++) {
+      for (let j = i + 1; j < topTables.length; j++) {
+        const bridge = this.findJoinPath(topTables[i], topTables[j]);
         if (bridge) bridge.forEach(t => allTables.add(t));
       }
     }
 
-    // Step 4: Build schema string for selected tables
-    return Array.from(allTables)
+    // Step 5: Cap total at 12 (primary + bridge)
+    const MAX_TOTAL = 12;
+    const finalTables = allTables.size <= MAX_TOTAL
+      ? Array.from(allTables)
+      : [...topTables, ...Array.from(allTables).filter(t => !topTables.includes(t))].slice(0, MAX_TOTAL);
+
+    // Step 6: Build schema string preserving original table order
+    return this.tables
+      .filter(t => finalTables.includes(t))
       .map(t => this.perTableSchemas.get(t))
       .filter(Boolean)
-      .join('\n\n');
+      .join('\n');
   }
 
-  private matchTables(terms: string[]): Set<string> {
-    const matched = new Set<string>();
+  private scoreTables(terms: string[]): Map<string, number> {
+    const scores = new Map<string, number>();
     const lowerTerms = terms.map(t => t.toLowerCase());
+
+    const addScore = (table: string, points: number) => {
+      scores.set(table, (scores.get(table) ?? 0) + points);
+    };
 
     for (const term of lowerTerms) {
       for (const table of this.tables) {
-        // Exact table name match
+        // Exact match (highest priority)
         if (table === term) {
-          matched.add(table);
+          addScore(table, 10);
           continue;
         }
         // Singular/plural match
         if (this.singularize(table) === term || this.pluralize(table) === term ||
             this.singularize(term) === table || this.pluralize(term) === table) {
-          matched.add(table);
+          addScore(table, 8);
           continue;
         }
-        // Substring match on table name
-        if (table.includes(term) || term.includes(table)) {
-          matched.add(table);
-          continue;
+        // Django-style prefix match: term "order" matches "order_order", "order_orderline"
+        // Primary table (app_model where model contains term) gets higher score
+        const parts = table.split('_');
+        if (parts.length >= 2) {
+          const appName = parts[0];
+          const modelName = parts.slice(1).join('_');
+          if (appName === term) {
+            // "order" matches "order_order" (primary) vs "order_orderevent" (secondary)
+            addScore(table, modelName === term || modelName === appName ? 7 : 4);
+            continue;
+          }
+          if (modelName === term || this.singularize(modelName) === term || this.pluralize(modelName) === term) {
+            addScore(table, 6);
+            continue;
+          }
+        }
+        // General substring match (lower priority)
+        if (table.includes(term) && term.length >= 3) {
+          addScore(table, 2);
         }
       }
 
-      // Column name match: term matches a column name
+      // Column name match (lowest priority for table selection)
       for (const [colName, tables] of this.tableIndex) {
-        if (colName.includes(term) || term.includes(colName)) {
-          for (const t of tables) matched.add(t);
+        if (colName === term || colName === `${term}_id`) {
+          for (const t of tables) addScore(t, 3);
         }
       }
     }
 
-    return matched;
+    return scores;
   }
 
   private hubTables(limit: number): string[] {

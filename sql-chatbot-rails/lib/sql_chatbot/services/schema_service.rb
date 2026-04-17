@@ -185,26 +185,38 @@ module SqlChatbot
         # If indexes are empty (discover not yet called), return full summary
         return @summary_text if @per_table_schemas.empty?
 
-        selected = match_tables(terms)
-        selected = hub_tables(10) if selected.empty?
+        # Step 1: Score tables by relevance
+        scores = score_tables(terms)
 
-        # Find join paths between all pairs to include bridge tables
-        table_set = Set.new(selected)
-        selected.to_a.combination(2).each do |from, to|
+        # Step 2: Fallback to hub tables if no matches
+        if scores.empty?
+          hub_tables(8).each { |t| scores[t] = 1 }
+        end
+
+        # Step 3: Take top 8 by score
+        max_primary = 8
+        top_tables = scores.sort_by { |_, s| -s }.first(max_primary).map(&:first)
+
+        # Step 4: Find FK join paths between top tables
+        all_tables = Set.new(top_tables)
+        top_tables.combination(2).each do |from, to|
           bridge = find_join_path(from, to)
-          table_set.merge(bridge) unless bridge.nil?
+          all_tables.merge(bridge) unless bridge.nil?
         end
 
-        # Build schema string from selected tables (preserve original order)
-        result_lines = []
-        @tables.each do |table|
-          next unless table_set.include?(table)
+        # Step 5: Cap total at 12
+        max_total = 12
+        final_tables = if all_tables.size <= max_total
+                         all_tables
+                       else
+                         Set.new((top_tables + all_tables.to_a.reject { |t| top_tables.include?(t) }).first(max_total))
+                       end
 
-          schema_chunk = @per_table_schemas[table]
-          result_lines << schema_chunk if schema_chunk
-        end
-
-        result_lines.join("\n")
+        # Step 6: Build schema string preserving original order
+        @tables.select { |t| final_tables.include?(t) }
+               .map { |t| @per_table_schemas[t] }
+               .compact
+               .join("\n")
       end
 
       # Inject model-level annotations (from ModelIntrospector) into the schema summary.
@@ -592,53 +604,64 @@ module SqlChatbot
       # Tries (in order): exact table name, singular/plural variants, column name match,
       # substring match on column names.
       # Returns a Set of matching table names.
-      def match_tables(terms)
-        matched = Set.new
+      def score_tables(terms)
+        scores = Hash.new(0)
         table_set = Set.new(@tables)
 
         terms.each do |term|
           t = term.to_s.downcase.strip
           next if t.empty?
 
-          # 1. Exact table name match
-          if table_set.include?(t)
-            matched.add(t)
-            next
+          @tables.each do |table|
+            # Exact match (highest priority)
+            if table == t
+              scores[table] += 10
+              next
+            end
+
+            # Singular/plural match
+            variants = ["#{t}s", "#{t.sub(/y$/, 'ie')}s", "#{t}es", t.sub(/ies$/, 'y'), t.sub(/s$/, '')]
+            if variants.include?(table) || variants.any? { |v| v == table }
+              scores[table] += 8
+              next
+            end
+
+            # Django/prefix match: "order" matches "order_order" (primary=7) vs "order_orderevent" (secondary=4)
+            parts = table.split("_", 2)
+            if parts.length >= 2
+              app_name = parts[0]
+              model_name = parts[1]
+              if app_name == t
+                scores[table] += (model_name == t || model_name == app_name) ? 7 : 4
+                next
+              end
+              model_singular = model_name.sub(/s$/, "")
+              if model_name == t || model_singular == t
+                scores[table] += 6
+                next
+              end
+            end
+
+            # General substring (low priority, min 3 chars)
+            if t.length >= 3 && table.include?(t)
+              scores[table] += 2
+            end
           end
 
-          # 2. Singular/plural variants
-          variants = [
-            "#{t}s",
-            "#{t.sub(/y$/, 'ie')}s",
-            "#{t}es",
-            t.sub(/ies$/, 'y'),
-            t.sub(/s$/, ''),
-          ]
-          variant_match = variants.find { |v| table_set.include?(v) }
-          matched.add(variant_match) if variant_match
-
-          # 3. Prefix match on table names (e.g., "job" also matches "job_types", "job_offers")
-          @tables.each do |tbl|
-            matched.add(tbl) if tbl.start_with?("#{t}_")
-          end
-
-          # 4. Column name exact match (skip if we already found tables)
-          next unless matched.empty? || !variant_match
-
-          if @table_index.key?(t)
-            @table_index[t].each { |tbl| matched.add(tbl) }
-            next
-          end
-
-          # 5. Substring match on column names
+          # Column name match
           @table_index.each do |col_name, tables|
-            if col_name.include?(t) || t.include?(col_name)
-              tables.each { |tbl| matched.add(tbl) }
+            if col_name == t || col_name == "#{t}_id"
+              tables.each { |tbl| scores[tbl] += 3 }
             end
           end
         end
 
-        matched
+        scores.select { |_, v| v > 0 }
+      end
+
+      # Keep match_tables as alias for backward compatibility (used in tests)
+      def match_tables(terms)
+        Set.new(score_tables(terms).keys)
       end
 
       # Return the top N tables by FK edge count (most-connected = hub tables).
