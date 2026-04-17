@@ -6,6 +6,12 @@ module SqlChatbot
       SYSTEM_PROMPT = <<~PROMPT.freeze
         You are a PostgreSQL query generator. Given a database schema and a user question, generate a single SELECT query to answer the question.
 
+        CRITICAL TABLE NAME RULES:
+        1. ONLY use table names that EXACTLY match the "TABLE <name>" entries in the schema below. NEVER guess or invent table names.
+        2. Many frameworks use prefixed table names (e.g., Django uses "order_order" not "orders", "product_product" not "products", "account_user" not "users"). Always check the schema.
+        3. If you cannot find a matching table in the schema, say so in the explanation rather than guessing a table name that might not exist.
+        4. Similarly, ONLY use column names that appear in the schema for each table. Never assume a column exists.
+
         CRITICAL SOFT DELETE RULES:
         1. ONLY add "deleted_at IS NULL" (or similar soft-delete filter) for tables that have a "-- SOFT DELETE:" annotation in the schema below.
         2. If a table does NOT have a "-- SOFT DELETE:" annotation, do NOT add any deleted_at filter — the column does not exist and the query will fail.
