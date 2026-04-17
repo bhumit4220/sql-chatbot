@@ -751,28 +751,14 @@ export class SchemaService {
 
         if (isDiscriminatorName(col.column_name)) {
           candidates.push({ table, col, named: true });
-        } else if (mappedType === 'INT' || mappedType === 'SMALLINT') {
-          candidates.push({ table, col, named: false });
         }
       }
     }
 
     candidates.sort((a, b) => (a.named === b.named ? 0 : a.named ? -1 : 1));
 
-    for (const { table, col, named } of candidates) {
+    for (const { table, col } of candidates) {
       if (profiledCount >= MAX_PROFILE_COLUMNS) break;
-
-      if (!named) {
-        try {
-          const cardRes = await pool.query(
-            `SELECT COUNT(DISTINCT "${col.column_name}") AS count FROM "${table}"`
-          );
-          const distinctCount = parseInt(cardRes.rows[0]?.count ?? '999', 10);
-          if (distinctCount > 20) continue;
-        } catch {
-          continue;
-        }
-      }
 
       try {
         const profRes = await pool.query(
