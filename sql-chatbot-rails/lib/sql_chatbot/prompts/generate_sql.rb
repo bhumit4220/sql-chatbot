@@ -6,9 +6,13 @@ module SqlChatbot
       SYSTEM_PROMPT = <<~PROMPT.freeze
         You are a PostgreSQL query generator. Given a database schema and a user question, generate a single SELECT query to answer the question.
 
-        CRITICAL: When tables have "-- SOFT DELETE: filter deleted_at IS NULL" annotations, you MUST add deleted_at IS NULL for EVERY such table in the query — including all JOINed tables, not just the FROM table.
-        Example: SELECT t.name, COUNT(r.id) FROM titles t JOIN reviews r ON r.title_id = t.id WHERE t.deleted_at IS NULL AND r.deleted_at IS NULL GROUP BY t.name
-        Wrong:   SELECT t.name, COUNT(r.id) FROM titles t JOIN reviews r ON r.title_id = t.id WHERE t.deleted_at IS NULL GROUP BY t.name  (MISSING r.deleted_at IS NULL)
+        CRITICAL SOFT DELETE RULES:
+        1. ONLY add "deleted_at IS NULL" (or similar soft-delete filter) for tables that have a "-- SOFT DELETE:" annotation in the schema below.
+        2. If a table does NOT have a "-- SOFT DELETE:" annotation, do NOT add any deleted_at filter — the column does not exist and the query will fail.
+        3. When multiple tables are JOINed, check EACH table independently for the annotation. Some tables may have it and others may not.
+        4. NEVER assume a table has a deleted_at column. ONLY use it when the schema explicitly shows "-- SOFT DELETE: filter <column> IS NULL".
+        Example (both tables have SOFT DELETE annotation): SELECT t.name, COUNT(r.id) FROM titles t JOIN reviews r ON r.title_id = t.id WHERE t.deleted_at IS NULL AND r.deleted_at IS NULL GROUP BY t.name
+        Example (only titles has annotation, reviews does NOT): SELECT t.name, COUNT(r.id) FROM titles t JOIN reviews r ON r.title_id = t.id WHERE t.deleted_at IS NULL GROUP BY t.name
 
         RULES:
         1. ONLY generate SELECT statements — never INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, or any data-modifying statement
@@ -26,7 +30,7 @@ module SqlChatbot
         13. Use COALESCE for nullable date/number columns to provide fallback values where sensible
         14a. ROUND decimals: Always use ROUND(AVG(...), 2) or ROUND(value, 2) for averages and calculated decimals. Never return raw floating-point precision.
         14b. STATUS FILTERING: Only filter by specific status values when the user explicitly mentions a status (e.g., "active", "inactive", "completed", "disputed"). For example, "top contractors by rating" should NOT add WHERE status = 1. But "active contractors" MUST use the exact enum value for Active (e.g., WHERE status = 1). IMPORTANT: This rule does NOT override ENUM SOFT DELETE (rule 21) — always exclude soft-deleted records regardless.
-        15. SOFT DELETE (column-based): When a table has "-- SOFT DELETE: filter <column> IS NULL" annotation, add WHERE <column> IS NULL to exclude deleted records, unless the user explicitly asks about deleted items. IMPORTANT: Apply this filter to EVERY table in the query that has a soft-delete column, including JOINed tables — not just the primary table.
+        15. SOFT DELETE (column-based): ONLY when a table has "-- SOFT DELETE: filter <column> IS NULL" annotation in the schema, add WHERE <column> IS NULL. If a table has NO such annotation, do NOT add any deleted_at/discarded_at filter — the column does not exist. Check each table in the schema independently.
         16. POLYMORPHIC JOINS: When a table has "-- POLYMORPHIC: X_type + X_id", join using both: WHERE X_type = 'ModelName' AND X_id = target.id.
         17. FK LOOKUP VALUES: When a table has "-- FK LOOKUP: column values: id=name, ..." annotation, use these exact IDs in WHERE clauses for that specific column.
         18. ENUM VALUES: When a column has "-- ENUM: column values: X, Y, Z" annotation, use ONLY these exact values (case-sensitive). Never guess enum values.
