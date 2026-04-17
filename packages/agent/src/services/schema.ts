@@ -10,6 +10,19 @@ const SENSITIVE_PATTERNS = [
   'salt', 'private_key', 'api_key', 'auth_key', 'access_key',
 ];
 
+const DISCRIMINATOR_NAMES = new Set([
+  'type', 'status', 'kind', 'role', 'state', 'category',
+  'level', 'priority', 'mode', 'source',
+]);
+
+function isDiscriminatorName(colName: string): boolean {
+  if (DISCRIMINATOR_NAMES.has(colName)) return true;
+  for (const name of DISCRIMINATOR_NAMES) {
+    if (colName.endsWith(`_${name}`)) return true;
+  }
+  return false;
+}
+
 const TYPE_MAP: Record<string, string> = {
   'character varying': 'VARCHAR',
   'integer': 'INT',
@@ -170,6 +183,21 @@ export class SchemaService {
         columnsByTable.get(col.table_name)!.push(col);
       }
 
+      // Track columns that already have enum annotations (PG enum or check constraint)
+      const annotatedColumns = new Set<string>();
+      for (const key of enumMap.keys()) {
+        for (const columns of columnsByTable.values()) {
+          for (const col of columns) {
+            if (col.data_type === 'USER-DEFINED' && col.udt_name === key) {
+              annotatedColumns.add(`${col.table_name}.${col.column_name}`);
+            }
+          }
+        }
+      }
+      for (const key of checkEnumMap.keys()) {
+        annotatedColumns.add(key);
+      }
+
       // Collect FK target tables for lookup value detection (DB-level FKs)
       const fkTargetTables = new Set<string>(
         fksRes.rows.map((r: ForeignKey) => r.to_table)
@@ -212,6 +240,11 @@ export class SchemaService {
         rowCountRes.rows.map((r: { relname: string; n_live_tup: string }) =>
           [r.relname, parseInt(r.n_live_tup, 10)]
         )
+      );
+
+      // Profile columns for data value annotations
+      const profileAnnotations = await this.profileColumns(
+        pool, columnsByTable, tableNames, pkSet, fkMap, rowCounts, annotatedColumns
       );
 
       // Build summary lines
@@ -268,6 +301,13 @@ export class SchemaService {
         // Lookup values annotation
         if (lookupValues.has(table)) {
           annotations.push(`  -- VALUES: ${lookupValues.get(table)}`);
+        }
+
+        // Data profiler annotations
+        if (profileAnnotations.has(table)) {
+          for (const ann of profileAnnotations.get(table)!) {
+            annotations.push(ann);
+          }
         }
 
         const count = rowCounts.get(table);
@@ -673,6 +713,83 @@ export class SchemaService {
         }
       } catch {
         // Skip tables that fail (e.g., permission issues)
+      }
+    }
+
+    return result;
+  }
+
+  private async profileColumns(
+    pool: Pool,
+    columnsByTable: Map<string, ColumnInfo[]>,
+    tableNames: string[],
+    pkSet: Set<string>,
+    fkMap: Map<string, string>,
+    rowCounts: Map<string, number>,
+    annotatedColumns: Set<string>,
+  ): Promise<Map<string, string[]>> {
+    const result = new Map<string, string[]>();
+    const MAX_PROFILE_COLUMNS = 50;
+    let profiledCount = 0;
+
+    const candidates: Array<{ table: string; col: ColumnInfo; named: boolean }> = [];
+
+    for (const table of tableNames) {
+      const count = rowCounts.get(table);
+      if (count === undefined || count === 0) continue;
+
+      const columns = columnsByTable.get(table) || [];
+      for (const col of columns) {
+        const key = `${table}.${col.column_name}`;
+        if (pkSet.has(key)) continue;
+        if (fkMap.has(key)) continue;
+        if (annotatedColumns.has(key)) continue;
+        if (isSensitive(col.column_name)) continue;
+
+        const mappedType = mapType(col.data_type);
+        if (!['INT', 'SMALLINT', 'BIGINT', 'VARCHAR', 'TEXT'].includes(mappedType)) continue;
+
+        if (isDiscriminatorName(col.column_name)) {
+          candidates.push({ table, col, named: true });
+        } else if (mappedType === 'INT' || mappedType === 'SMALLINT') {
+          candidates.push({ table, col, named: false });
+        }
+      }
+    }
+
+    candidates.sort((a, b) => (a.named === b.named ? 0 : a.named ? -1 : 1));
+
+    for (const { table, col, named } of candidates) {
+      if (profiledCount >= MAX_PROFILE_COLUMNS) break;
+
+      if (!named) {
+        try {
+          const cardRes = await pool.query(
+            `SELECT COUNT(DISTINCT "${col.column_name}") AS count FROM "${table}"`
+          );
+          const distinctCount = parseInt(cardRes.rows[0]?.count ?? '999', 10);
+          if (distinctCount > 20) continue;
+        } catch {
+          continue;
+        }
+      }
+
+      try {
+        const profRes = await pool.query(
+          `SELECT "${col.column_name}"::text AS value, COUNT(*) AS cnt FROM "${table}" WHERE "${col.column_name}" IS NOT NULL GROUP BY "${col.column_name}" ORDER BY COUNT(*) DESC LIMIT 20`
+        );
+
+        if (profRes.rows.length === 0 || profRes.rows.length > 20) continue;
+
+        const pairs = profRes.rows.map(
+          (r: { value: string; cnt: string }) => `${r.value} (${r.cnt} rows)`
+        );
+
+        if (!result.has(table)) result.set(table, []);
+        result.get(table)!.push(`  -- DATA VALUES: ${col.column_name} \u2192 ${pairs.join(', ')}`);
+        profiledCount++;
+      } catch {
+        // Skip columns that fail
       }
     }
 

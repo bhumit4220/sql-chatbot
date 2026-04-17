@@ -61,6 +61,8 @@ function setupMockQuery(
     lookupValues?: Record<string, { rows: Record<string, unknown>[] }>;
     enums?: { rows: { enum_name: string; enum_value: string }[] };
     checkConstraints?: { rows: { table_name: string; check_def: string }[] };
+    profileResults?: Record<string, { rows: { value: string; cnt: string }[] }>;
+    cardinalityResults?: Record<string, { rows: { count: string }[] }>;
   } = {}
 ) {
   const tables = overrides.tables ?? tablesResult;
@@ -71,6 +73,8 @@ function setupMockQuery(
   const lookupValues = overrides.lookupValues ?? {};
   const enums = overrides.enums ?? { rows: [] };
   const checks = overrides.checkConstraints ?? { rows: [] };
+  const profileResults = overrides.profileResults ?? {};
+  const cardinalityResults = overrides.cardinalityResults ?? {};
 
   mockQuery.mockImplementation((sql: string) => {
     if (sql.includes('information_schema.tables')) return Promise.resolve(tables);
@@ -80,6 +84,23 @@ function setupMockQuery(
     if (sql.includes('pg_enum')) return Promise.resolve(enums);
     if (sql.includes('pg_constraint')) return Promise.resolve(checks);
     if (sql.includes('pg_stat_user_tables')) return Promise.resolve(rowCounts);
+    // Match cardinality check queries: SELECT COUNT(DISTINCT col) ...
+    if (sql.includes('COUNT(DISTINCT')) {
+      for (const [key, result] of Object.entries(cardinalityResults)) {
+        if (sql.includes(key)) {
+          return Promise.resolve(result);
+        }
+      }
+      return Promise.resolve({ rows: [{ count: '999' }] });
+    }
+    // Match profiler queries: SELECT col::text ... GROUP BY
+    if (sql.includes('GROUP BY') && !sql.includes('information_schema')) {
+      for (const [key, result] of Object.entries(profileResults)) {
+        if (sql.includes(key)) {
+          return Promise.resolve(result);
+        }
+      }
+    }
     // Match lookup value queries: SELECT pk, display FROM table_name ORDER BY pk LIMIT 50
     for (const [tableName, result] of Object.entries(lookupValues)) {
       if (sql.includes(`FROM ${tableName}`) || sql.includes(`FROM "${tableName}"`)) {
@@ -954,5 +975,147 @@ describe('SchemaService', () => {
       const result = svc.extractEnumContext('TABLE foo (id INT PK)');
       expect(result).toBe('');
     });
+  });
+
+  // --- Data Profiler Tests ---
+
+  it('profiles named discriminator columns with DATA VALUES annotation', async () => {
+    setupMockQuery({
+      tables: { rows: [{ table_name: 'user' }] },
+      columns: { rows: [
+        { table_name: 'user', column_name: 'id', data_type: 'bigint', udt_name: 'int8', is_nullable: 'NO', column_default: null },
+        { table_name: 'user', column_name: 'name', data_type: 'character varying', udt_name: 'varchar', is_nullable: 'NO', column_default: null },
+        { table_name: 'user', column_name: 'type', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+      ] },
+      primaryKeys: { rows: [{ table_name: 'user', column_name: 'id' }] },
+      foreignKeys: { rows: [] },
+      rowCounts: { rows: [{ relname: 'user', n_live_tup: '9' }] },
+      profileResults: {
+        'user': { rows: [
+          { value: '0', cnt: '6' },
+          { value: '1', cnt: '3' },
+        ] },
+      },
+    });
+
+    await service.discover('postgres://localhost/testdb');
+    const summary = service.getSummary();
+    expect(summary).toContain('-- DATA VALUES: type');
+    expect(summary).toContain('0 (6 rows)');
+    expect(summary).toContain('1 (3 rows)');
+  });
+
+  it('does not profile primary key or foreign key columns', async () => {
+    setupMockQuery({
+      tables: { rows: [{ table_name: 'orders' }, { table_name: 'users' }] },
+      columns: { rows: [
+        { table_name: 'orders', column_name: 'id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+        { table_name: 'orders', column_name: 'status', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+        { table_name: 'orders', column_name: 'user_id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+        { table_name: 'users', column_name: 'id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+        { table_name: 'users', column_name: 'name', data_type: 'character varying', udt_name: 'varchar', is_nullable: 'NO', column_default: null },
+      ] },
+      primaryKeys: { rows: [
+        { table_name: 'orders', column_name: 'id' },
+        { table_name: 'users', column_name: 'id' },
+      ] },
+      foreignKeys: { rows: [
+        { from_table: 'orders', from_column: 'user_id', to_table: 'users', to_column: 'id' },
+      ] },
+      rowCounts: { rows: [
+        { relname: 'orders', n_live_tup: '100' },
+        { relname: 'users', n_live_tup: '10' },
+      ] },
+      profileResults: {
+        'orders': { rows: [
+          { value: '1', cnt: '60' },
+          { value: '2', cnt: '30' },
+          { value: '3', cnt: '10' },
+        ] },
+      },
+    });
+
+    await service.discover('postgres://localhost/testdb');
+    const summary = service.getSummary();
+    expect(summary).toContain('-- DATA VALUES: status');
+    expect(summary).not.toContain('DATA VALUES: id');
+    expect(summary).not.toContain('DATA VALUES: user_id');
+  });
+
+  it('does not profile columns already annotated with PG ENUM or CHECK ENUM', async () => {
+    setupMockQuery({
+      tables: { rows: [{ table_name: 'tickets' }] },
+      columns: { rows: [
+        { table_name: 'tickets', column_name: 'id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+        { table_name: 'tickets', column_name: 'status', data_type: 'USER-DEFINED', udt_name: 'ticket_status', is_nullable: 'NO', column_default: null },
+        { table_name: 'tickets', column_name: 'priority', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+      ] },
+      primaryKeys: { rows: [{ table_name: 'tickets', column_name: 'id' }] },
+      foreignKeys: { rows: [] },
+      enums: { rows: [
+        { enum_name: 'ticket_status', enum_value: 'open' },
+        { enum_name: 'ticket_status', enum_value: 'closed' },
+      ] },
+      rowCounts: { rows: [{ relname: 'tickets', n_live_tup: '50' }] },
+      profileResults: {
+        'tickets': { rows: [
+          { value: '1', cnt: '30' },
+          { value: '2', cnt: '15' },
+          { value: '3', cnt: '5' },
+        ] },
+      },
+    });
+
+    await service.discover('postgres://localhost/testdb');
+    const summary = service.getSummary();
+    expect(summary).toContain('ENUM(open,closed)');
+    expect(summary).not.toContain('DATA VALUES: status');
+    expect(summary).toContain('-- DATA VALUES: priority');
+  });
+
+  it('does not profile columns in tables with 0 rows', async () => {
+    setupMockQuery({
+      tables: { rows: [{ table_name: 'settings' }] },
+      columns: { rows: [
+        { table_name: 'settings', column_name: 'id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+        { table_name: 'settings', column_name: 'type', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+      ] },
+      primaryKeys: { rows: [{ table_name: 'settings', column_name: 'id' }] },
+      foreignKeys: { rows: [] },
+      rowCounts: { rows: [{ relname: 'settings', n_live_tup: '0' }] },
+    });
+
+    await service.discover('postgres://localhost/testdb');
+    const summary = service.getSummary();
+    expect(summary).not.toContain('DATA VALUES');
+  });
+
+  it('caps profiling at 50 columns total', async () => {
+    const tableRows = Array.from({ length: 60 }, (_, i) => ({ table_name: `t${i}` }));
+    const columnRows = tableRows.flatMap(t => [
+      { table_name: t.table_name, column_name: 'id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+      { table_name: t.table_name, column_name: 'type', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+    ]);
+    const pkRows = tableRows.map(t => ({ table_name: t.table_name, column_name: 'id' }));
+    const rowCountRows = tableRows.map(t => ({ relname: t.table_name, n_live_tup: '10' }));
+
+    const profileResults: Record<string, { rows: { value: string; cnt: string }[] }> = {};
+    for (const t of tableRows) {
+      profileResults[t.table_name] = { rows: [{ value: '1', cnt: '5' }, { value: '2', cnt: '5' }] };
+    }
+
+    setupMockQuery({
+      tables: { rows: tableRows },
+      columns: { rows: columnRows },
+      primaryKeys: { rows: pkRows },
+      foreignKeys: { rows: [] },
+      rowCounts: { rows: rowCountRows },
+      profileResults,
+    });
+
+    await service.discover('postgres://localhost/testdb');
+    const summary = service.getSummary();
+    const dataValueCount = (summary.match(/DATA VALUES/g) || []).length;
+    expect(dataValueCount).toBeLessThanOrEqual(50);
   });
 });
