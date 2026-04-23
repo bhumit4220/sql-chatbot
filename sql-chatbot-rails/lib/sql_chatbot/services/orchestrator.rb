@@ -5,6 +5,7 @@ require "sql_chatbot/prompts/classify"
 require "sql_chatbot/prompts/generate_sql"
 require "sql_chatbot/prompts/answer"
 require "sql_chatbot/services/sql_executor"
+require "sql_chatbot/services/grammar_pipeline"
 
 module SqlChatbot
   module Services
@@ -86,6 +87,12 @@ module SqlChatbot
       # ============================================================
 
       def handle_data_with_code(yielder, question, classification, page_context, history)
+        # --- Grammar-first path (before LLM SQL generation) ---
+        grammar_result = try_grammar_path(yielder, question, history)
+        if grammar_result == :handled
+          return
+        end
+
         # Search code index for context
         search_terms = classification[:searchTerms] || []
         code_results = search_terms.empty? ? [] : @code_indexer.search(search_terms)
@@ -394,6 +401,84 @@ module SqlChatbot
         if defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger
           Rails.logger.error("[SqlChatbot] #{exception.class}: #{exception.message}")
           Rails.logger.error(exception.backtrace&.first(5)&.join("\n")) if exception.backtrace
+        end
+      end
+
+      # Attempt the grammar-first path.
+      # Returns :handled if grammar hit + SQL executed + answer streamed.
+      # Returns :miss if grammar missed or disabled — caller should fall through to LLM path.
+      def try_grammar_path(yielder, question, history)
+        registry = defined?(SqlChatbot) && SqlChatbot.respond_to?(:registry) ? SqlChatbot.registry : nil
+        config   = defined?(SqlChatbot) && SqlChatbot.respond_to?(:config) ? SqlChatbot.config : nil
+
+        return :miss unless registry
+        return :miss if config && config.respond_to?(:grammar_enabled) && config.grammar_enabled == false
+
+        call_llm = ->(messages) { @llm.call(messages, json_mode: true) }
+        threshold = config.respond_to?(:grammar_confidence_threshold) ? config.grammar_confidence_threshold : 0.7
+        miss_log  = resolved_miss_log_path(config)
+
+        pipeline = GrammarPipeline.new(
+          registry: registry,
+          call_llm: call_llm,
+          confidence_threshold: threshold,
+          miss_log_path: miss_log
+        )
+
+        result = pipeline.try(question: question, history: history)
+
+        unless result[:ok]
+          yielder.yield({ type: "grammar_fallback", data: { reason: result[:reason] } })
+          return :miss
+        end
+
+        sql = result[:sql]
+
+        yielder.yield({ type: "grammar_matched", data: {} })
+        yielder.yield({ type: "sql", query: sql, explanation: "grammar" })
+
+        validation = SqlExecutor.validate_sql(sql)
+        unless validation[:valid]
+          yielder.yield({ type: "error", message: "SQL validation failed: #{validation[:reason]}" })
+          return :handled
+        end
+
+        yielder.yield({ type: "executing" })
+
+        begin
+          db_result = SqlExecutor.execute_sql(validation[:sql])
+        rescue => e
+          log_error(e)
+          yielder.yield({ type: "error", message: friendly_error_message(e) })
+          return :handled
+        end
+
+        answer_messages = Prompts::Answer.build_messages(
+          question: question,
+          type: "data",
+          sql_result: db_result[:rows],
+          sql_query: validation[:sql],
+          history: history
+        )
+
+        @llm.stream(answer_messages) do |chunk|
+          yielder.yield({ type: "token", content: chunk })
+        end
+
+        :handled
+      rescue => e
+        log_error(e)
+        # Grammar path failure — fall through to LLM path
+        :miss
+      end
+
+      def resolved_miss_log_path(config)
+        if config && config.respond_to?(:grammar_miss_log_path) && config.grammar_miss_log_path
+          config.grammar_miss_log_path
+        elsif defined?(Rails) && Rails.respond_to?(:root) && Rails.root
+          Rails.root.join("log", "grammar-misses.ndjson").to_s
+        else
+          "/tmp/grammar-misses.ndjson"
         end
       end
 

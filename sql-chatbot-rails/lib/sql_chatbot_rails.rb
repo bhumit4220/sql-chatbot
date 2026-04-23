@@ -18,7 +18,7 @@ require "sql_chatbot/engine" if defined?(Rails)
 
 module SqlChatbot
   class << self
-    attr_accessor :config, :schema_service, :code_indexer, :orchestrator
+    attr_accessor :config, :schema_service, :code_indexer, :orchestrator, :registry
 
     def configure
       self.config ||= Configuration.new
@@ -30,6 +30,7 @@ module SqlChatbot
       @schema_service = nil
       @code_indexer = nil
       @orchestrator = nil
+      @registry = nil
       @initialized = false
       @init_mutex = Mutex.new
     end

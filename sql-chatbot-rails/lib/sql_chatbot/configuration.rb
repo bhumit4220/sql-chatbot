@@ -13,13 +13,19 @@ module SqlChatbot
                   :secret, :code_paths, :custom_context,
                   :allowed_origins,  # Array of allowed cross-origin domains
                   :token_lifetime,   # JWT lifetime in seconds (default: 900)
-                  :token_secret      # JWT signing secret (auto-generated if nil)
+                  :token_secret,     # JWT signing secret (auto-generated if nil)
+                  :grammar_enabled,             # Boolean — enable grammar-first SQL path (default: true)
+                  :grammar_confidence_threshold, # Float — minimum confidence for grammar hit (default: 0.7)
+                  :grammar_miss_log_path         # String — path to NDJSON miss log (default: nil, resolved at runtime)
 
     def initialize
       @llm_provider = "openrouter"
       @code_paths = ["./app"]
       @token_lifetime = 900
       @_resolved_token_secret = nil
+      @grammar_enabled = true
+      @grammar_confidence_threshold = 0.7
+      @grammar_miss_log_path = nil
     end
 
     def resolved_token_secret
