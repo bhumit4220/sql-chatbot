@@ -8,11 +8,11 @@
 
 | Field | Value |
 |---|---|
-| **Current phase** | **P2 Template Compiler COMPLETE.** Starting P3 Intent Extractor. |
+| **Current phase** | **P3 Intent Extractor COMPLETE.** Starting P4 Orchestrator Integration. |
 | **Branch** | `feature/compositional-grammar` (independent — never merged back) |
-| **Last updated** | 2026-04-23 (end of P2) |
+| **Last updated** | 2026-04-23 (end of P3) |
 | **Updated by** | session 2026-04-23 |
-| **Tests** | 323 npm + 379 Rails = 702 total passing (287+36 npm new, 350+29 Rails new) |
+| **Tests** | 333 npm + 389 Rails = 722 total passing (287+46 npm new, 350+39 Rails new) |
 
 ---
 
@@ -85,10 +85,10 @@ Every architecture-affecting decision lands here with date + reason. Do not edit
   - [x] 8 modifiers (TS + Ruby) — Tasks 13, 16b
   - [x] Modifier test coverage (JOIN/GROUP BY/HAVING/ORDER BY/LIMIT/DISTINCT) — Task 14
   - [x] Template compiler orchestration with soft-delete auto-injection — Tasks 15, 16c
-- [ ] **P3. Intent extractor** (~3 days)
-  - [ ] Entity candidate pre-selection
-  - [ ] LLM call + JSON parse
-  - [ ] Confidence gating + miss logging
+- [x] **P3. Intent extractor** (~3 days) — **COMPLETE**
+  - [x] Entity candidate pre-selection (TS + Ruby) — Tasks 18, 21a
+  - [x] LLM intent extractor with confidence gate (TS + Ruby) — Tasks 19, 21c
+  - [x] ndjson miss logger (TS + Ruby) — Tasks 20, 21b
 - [ ] **P4. Orchestrator integration** (~3-4 days)
   - [ ] `handleData` branch
   - [ ] SSE events (`grammar_matched`, `grammar_fallback`)

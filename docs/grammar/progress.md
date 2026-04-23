@@ -4,6 +4,29 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 
 ---
 
+## 2026-04-23 — P3 Intent Extractor COMPLETE
+
+**Done:**
+- **Task 18:** TS `selectEntityCandidates` — scores entities by singular/plural/alias matches, falls back to highest rowCount when no match. 4 tests. Commit `1cd3d15`.
+- **Task 19:** TS `extractIntent` — small-LLM intent classifier with injected `callLLM` for testability, structured JSON output with confidence gate (default 0.7), malformed-JSON fallback to unmatched. 4 tests. Commit `bfa8751`.
+- **Task 20:** TS `logMiss` ndjson append logger with auto-mkdir. 2 tests. Commit (inspection shows as part of subagent session).
+- **Task 21:** Ruby mirrors of entity_candidates + miss_logger + intent_extractor. Commits `95c0f87`, `568d797`, `3ba0615`. 10 new Rails tests.
+- **Task 22:** End-of-phase docs (this entry).
+
+**Test counts (end of P3):**
+- npm: 287 baseline + 46 new = **333 passing** (P1=16, P2=20, P3=10)
+- Rails: 350 baseline + 39 new = **389 passing** (P1=9, P2=20, P3=10)
+- **Total: 722 passing, 0 failures**
+
+**Key design points confirmed in implementation:**
+- Intent extractor uses dependency-injected `callLLM` (TS) / `call_llm` proc (Ruby) — allows unit tests to mock the LLM without any real API call.
+- System prompt is verbatim in TS and Ruby to ensure LLM behavior identical across both pipelines.
+- Miss logger appends ndjson lines with ISO timestamp; auto-creates parent directories.
+
+**Next:** P4 Orchestrator Integration — `tryGrammarPath` entry point, `handleData` branch with SSE events, middleware wiring, Rails controller integration, parity test, 120-question replay, final verification.
+
+---
+
 ## 2026-04-23 — P2 Template Compiler COMPLETE
 
 **Done:**
