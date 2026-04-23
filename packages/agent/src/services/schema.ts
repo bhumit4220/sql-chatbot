@@ -71,12 +71,30 @@ interface ForeignKey {
   to_column: string;
 }
 
+// Shape returned by getTableList() — consumed by grammar registry-loader.
+interface StructuredColumn {
+  name: string;
+  type: string;
+  nullable: boolean;
+  enumValues?: Record<string, number | string>;
+  fkTo?: { table: string; column: string };
+}
+
+interface StructuredTable {
+  name: string;
+  rowCount: number;
+  primaryKey: string;
+  columns: StructuredColumn[];
+}
+
 export class SchemaService {
   private summary = '';
   private tables: string[] = [];
   private perTableSchemas: Map<string, string> = new Map();
   private tableIndex: Map<string, string[]> = new Map();
   private fkGraph: Map<string, Array<{ fromCol: string; toTable: string; toCol: string }>> = new Map();
+  // Structured table data populated by discover() for use by grammar registry-loader.
+  private structuredTables: StructuredTable[] = [];
 
   async discover(databaseUrl: string): Promise<void> {
     const pool = new Pool({ connectionString: databaseUrl });
@@ -318,6 +336,63 @@ export class SchemaService {
         }
       }
 
+      // Populate structuredTables for grammar registry-loader (getTableList()).
+      // Each entry mirrors one table with raw PG types and resolved enum/FK metadata.
+      this.structuredTables = tableNames.map(table => {
+        const columns = columnsByTable.get(table) || [];
+
+        // Primary key: first PK row for this table, default 'id'.
+        const pkRow = pksRes.rows.find((r: { table_name: string; column_name: string }) => r.table_name === table);
+        const primaryKey: string = pkRow ? pkRow.column_name : 'id';
+
+        // Row count (may be undefined for tables not yet in pg_stat_user_tables).
+        const rowCount = rowCounts.get(table) ?? 0;
+
+        const structuredColumns: StructuredColumn[] = columns
+          .filter(col => !isSensitive(col.column_name))
+          .map(col => {
+            const key = `${table}.${col.column_name}`;
+
+            // Resolve enum values: PG enum takes priority over check constraint.
+            // Values stored as { value: value } (identity mapping) so callers can
+            // enumerate the set; grammar loader recognises this as an enum field.
+            let enumValues: Record<string, number | string> | undefined;
+            const pgEnumVals = col.data_type === 'USER-DEFINED' && col.udt_name
+              ? enumMap.get(col.udt_name) : undefined;
+            if (pgEnumVals && pgEnumVals.length > 0) {
+              enumValues = {};
+              pgEnumVals.forEach((v, i) => { enumValues![v] = i; });
+            } else {
+              const checkVals = checkEnumMap.get(key);
+              if (checkVals && checkVals.length > 0) {
+                enumValues = {};
+                checkVals.forEach(v => { enumValues![v] = v; });
+              }
+            }
+
+            // Resolve FK target: fkMap stores "target_table.target_column".
+            let fkTo: { table: string; column: string } | undefined;
+            const fkTarget = fkMap.get(key);
+            if (fkTarget) {
+              const dotIdx = fkTarget.indexOf('.');
+              fkTo = {
+                table: fkTarget.slice(0, dotIdx),
+                column: fkTarget.slice(dotIdx + 1),
+              };
+            }
+
+            return {
+              name: col.column_name,
+              type: col.data_type,        // raw PG type (e.g. 'integer', 'character varying')
+              nullable: col.is_nullable === 'YES',
+              ...(enumValues !== undefined ? { enumValues } : {}),
+              ...(fkTo !== undefined ? { fkTo } : {}),
+            };
+          });
+
+        return { name: table, rowCount, primaryKey, columns: structuredColumns };
+      });
+
       this.tables = tableNames;
       this.summary = lines.join('\n');
       this.buildPerTableSchemas(lines);
@@ -339,6 +414,14 @@ export class SchemaService {
   getTableNames(): string {
     if (this.tables.length === 0) return '';
     return `Available tables: ${this.tables.join(', ')}`;
+  }
+
+  /**
+   * Returns structured table data for the grammar registry-loader.
+   * Populated by discover(); returns empty array before discover() is called.
+   */
+  getTableList(): StructuredTable[] {
+    return this.structuredTables;
   }
 
   /**

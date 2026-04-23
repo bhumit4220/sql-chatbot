@@ -1090,6 +1090,74 @@ describe('SchemaService', () => {
     expect(summary).not.toContain('DATA VALUES');
   });
 
+  describe('SchemaService.getTableList', () => {
+    it('returns structured table data including enum values', async () => {
+      setupMockQuery({
+        tables: { rows: [{ table_name: 'users' }] },
+        columns: {
+          rows: [
+            { table_name: 'users', column_name: 'id', data_type: 'integer', udt_name: 'int4', is_nullable: 'NO', column_default: null },
+            { table_name: 'users', column_name: 'name', data_type: 'character varying', udt_name: 'varchar', is_nullable: 'NO', column_default: null },
+            { table_name: 'users', column_name: 'email', data_type: 'character varying', udt_name: 'varchar', is_nullable: 'YES', column_default: null },
+            { table_name: 'users', column_name: 'role_id', data_type: 'integer', udt_name: 'int4', is_nullable: 'YES', column_default: null },
+            { table_name: 'users', column_name: 'status', data_type: 'character varying', udt_name: 'varchar', is_nullable: 'NO', column_default: null },
+          ],
+        },
+        primaryKeys: { rows: [{ table_name: 'users', column_name: 'id' }] },
+        foreignKeys: { rows: [
+          { from_table: 'users', from_column: 'role_id', to_table: 'roles', to_column: 'id' },
+        ] },
+        rowCounts: { rows: [{ relname: 'users', n_live_tup: '42' }] },
+        checkConstraints: {
+          rows: [
+            {
+              table_name: 'users',
+              check_def: "(status IN ('active', 'banned'))",
+            },
+          ],
+        },
+      });
+
+      await service.discover('postgres://localhost:5432/testdb');
+
+      const list = service.getTableList();
+      expect(list).toHaveLength(1);
+
+      const usersEntry = list[0];
+      expect(usersEntry.name).toBe('users');
+      expect(usersEntry.rowCount).toBe(42);
+      expect(usersEntry.primaryKey).toBe('id');
+
+      // All columns present (sensitive ones like password filtered already — none here)
+      const colNames = usersEntry.columns.map(c => c.name);
+      expect(colNames).toContain('id');
+      expect(colNames).toContain('name');
+      expect(colNames).toContain('email');
+      expect(colNames).toContain('role_id');
+      expect(colNames).toContain('status');
+
+      // Raw PG types (not mapped)
+      const idCol = usersEntry.columns.find(c => c.name === 'id')!;
+      expect(idCol.type).toBe('integer');
+      expect(idCol.nullable).toBe(false);
+
+      const emailCol = usersEntry.columns.find(c => c.name === 'email')!;
+      expect(emailCol.nullable).toBe(true);
+
+      // FK wired correctly
+      const roleIdCol = usersEntry.columns.find(c => c.name === 'role_id')!;
+      expect(roleIdCol.fkTo).toBeDefined();
+      expect(roleIdCol.fkTo!.table).toBe('roles');
+      expect(roleIdCol.fkTo!.column).toBe('id');
+
+      // CHECK constraint enum values present on status column
+      const statusCol = usersEntry.columns.find(c => c.name === 'status')!;
+      expect(statusCol.enumValues).toBeDefined();
+      expect(statusCol.enumValues!['active']).toBeDefined();
+      expect(statusCol.enumValues!['banned']).toBeDefined();
+    });
+  });
+
   it('caps profiling at 50 columns total', async () => {
     const tableRows = Array.from({ length: 60 }, (_, i) => ({ table_name: `t${i}` }));
     const columnRows = tableRows.flatMap(t => [
