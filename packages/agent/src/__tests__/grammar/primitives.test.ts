@@ -23,4 +23,33 @@ describe('primitives', () => {
     expect(buildPrimitive({ primitive: 'LIST', entity: userEntity }))
       .toBe('SELECT id, name, email FROM users');
   });
+
+  it('SUM with field', () => {
+    const e = { ...userEntity, fields: { ...userEntity.fields, balance: { column: 'balance', type: 'decimal' as const, nullable: false, searchable: false } } };
+    expect(buildPrimitive({ primitive: 'SUM', entity: e, field: 'balance' }))
+      .toBe('SELECT SUM(users.balance) FROM users');
+  });
+
+  it('AVG rounds to 2 places', () => {
+    const e = { ...userEntity, fields: { ...userEntity.fields, score: { column: 'score', type: 'decimal' as const, nullable: false, searchable: false } } };
+    expect(buildPrimitive({ primitive: 'AVG', entity: e, field: 'score' }))
+      .toBe('SELECT ROUND(AVG(users.score), 2) FROM users');
+  });
+
+  it('MIN_MAX requires which', () => {
+    const e = { ...userEntity, fields: { ...userEntity.fields, score: { column: 'score', type: 'decimal' as const, nullable: false, searchable: false } } };
+    expect(() => buildPrimitive({ primitive: 'MIN_MAX', entity: e, field: 'score' }))
+      .toThrow(/which/);
+  });
+
+  it('TOP_N uses provided rankField', () => {
+    const e = { ...userEntity, rankingCandidates: ['created_at'], fields: { ...userEntity.fields, created_at: { column: 'created_at', type: 'timestamp' as const, nullable: false, searchable: false } } };
+    expect(buildPrimitive({ primitive: 'TOP_N', entity: e, n: 5 }))
+      .toContain('ORDER BY users.created_at DESC LIMIT 5');
+  });
+
+  it('throws when SUM field not on entity', () => {
+    expect(() => buildPrimitive({ primitive: 'SUM', entity: userEntity, field: 'nope' }))
+      .toThrow(/not in entity/);
+  });
 });
