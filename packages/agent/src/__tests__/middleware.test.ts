@@ -55,6 +55,12 @@ vi.mock('../config.js', () => ({
     llmApiKey: 'test-key',
     llmModel: 'llama-3.3-70b-versatile',
     secret: cfg.secret || undefined,
+    grammar: {
+      enabled: false,
+      manifestPath: '/tmp/sql-chatbot-manifest.json',
+      confidenceThreshold: 0.7,
+      missLogPath: '/tmp/grammar-misses.ndjson',
+    },
   })),
 }));
 

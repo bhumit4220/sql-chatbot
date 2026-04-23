@@ -5,7 +5,9 @@ import { initLLM } from './llm/client.js';
 import { SchemaService } from './services/schema.js';
 import { CodeIndexer } from './services/code-indexer.js';
 import { Orchestrator } from './services/orchestrator.js';
+import { loadRegistry } from './grammar/registry-loader.js';
 import type { AgentConfig } from './config.js';
+import type { Registry } from './grammar/registry.js';
 
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   const cookies: Record<string, string> = {};
@@ -61,7 +63,34 @@ export function sqlChatbot(
         await initLLM(config.llmBaseUrl, config.llmApiKey, config.llmModel);
         await schemaService.discover(config.databaseUrl);
         await codeIndexer.index(config.codePaths);
-        orchestrator = new Orchestrator({ schemaService, codeIndexer, databaseUrl: config.databaseUrl });
+
+        // Build metadata registry for grammar pipeline.
+        // When grammar is enabled (default), either load manifest or build from schema alone.
+        let registry: Registry | undefined;
+        if (config.grammar.enabled) {
+          try {
+            registry = loadRegistry({
+              manifestPath: config.grammar.manifestPath!,
+              schemaService,
+              onWarn: (m) => console.warn(`[sql-chatbot] ${m}`),
+            });
+          } catch (e) {
+            console.warn(`[sql-chatbot] registry_load_failed: ${(e as Error).message}. Grammar disabled for this process.`);
+            registry = undefined;
+          }
+        }
+
+        orchestrator = new Orchestrator({
+          schemaService,
+          codeIndexer,
+          databaseUrl: config.databaseUrl,
+          registry,
+          grammarConfig: {
+            enabled: config.grammar.enabled && !!registry,
+            confidenceThreshold: config.grammar.confidenceThreshold,
+            missLogPath: config.grammar.missLogPath,
+          },
+        });
         initialized = true;
       } catch (err) {
         // Reset so next request can retry initialization
