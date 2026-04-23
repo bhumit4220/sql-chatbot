@@ -145,6 +145,33 @@ function main(): void {
     return;
   }
 
+  if (flags.subcommand === 'introspect') {
+    const argv = process.argv.slice(3); // drop 'introspect'
+    const { values } = parseArgs({
+      args: argv,
+      options: {
+        framework: { type: 'string' },
+        code: { type: 'string' },
+        out: { type: 'string' },
+      },
+      strict: false,
+    });
+    const framework = (values.framework as string) || 'django';
+    const code = (values.code as string) || './';
+    const out = values.out as string | undefined;
+    (async () => {
+      const { runIntrospectCommand } = await import('./cli-introspect.js');
+      const registry = await runIntrospectCommand({ framework: framework as 'django', code, out });
+      const outPath = out ?? path.resolve(process.cwd(), 'sql-chatbot-manifest.json');
+      console.log(`[sql-chatbot] wrote manifest to ${outPath} (${Object.keys(registry.entities).length} entities)`);
+      process.exit(0);
+    })().catch((err: unknown) => {
+      console.error('[sql-chatbot] introspect failed:', (err as Error).message);
+      process.exit(1);
+    });
+    return;
+  }
+
   const fileConfig = loadConfigFile(process.cwd());
   const config = mergeConfig(fileConfig, process.env, flags);
 
