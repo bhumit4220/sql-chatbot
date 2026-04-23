@@ -8,10 +8,11 @@
 
 | Field | Value |
 |---|---|
-| **Current phase** | Planning complete. Ready to execute P1 (Registry Foundation). |
+| **Current phase** | **P1 Registry Foundation COMPLETE.** Starting P2 Template Compiler. |
 | **Branch** | `feature/compositional-grammar` (independent — never merged back) |
-| **Last updated** | 2026-04-23 |
+| **Last updated** | 2026-04-23 (end of P1) |
 | **Updated by** | session 2026-04-23 |
+| **Tests** | 303 npm + 359 Rails = 662 total passing (287+16 npm new, 350+9 Rails new) |
 
 ---
 
@@ -43,6 +44,9 @@ Every architecture-affecting decision lands here with date + reason. Do not edit
 | 4 | 2026-04-23 | Intent extractor uses a small LLM (gpt-5-mini class), not rule-based pattern matcher | Human-phrased questions (typos, casual language) are where pattern matchers fail. LLM extraction is cheap (~$0.0002/call). |
 | 5 | 2026-04-23 | No auto-learning from LLM output (no Vanna-style template extraction). Grammar evolves via registry refresh (automatic as app code grows) and manual primitive additions from telemetry review. | Vanna was archived March 2026 for this exact failure mode. Auto-learned templates bake LLM mistakes in permanently. |
 | 6 | 2026-04-23 | Branch `feature/compositional-grammar` stays independent. No merge steps in any plan or acceptance criteria. | User preference — see feedback_no_merge_questions memory. |
+| 7 | 2026-04-23 | Rails scope extraction does NOT use `method_source` (plan's original approach). Instead, evaluate each singleton method as an AR relation and extract WHERE from `.to_sql`. Filter AR-generated enum helpers (`active?`, `not_active`, `statuses`) via `model.defined_enums`. | `method_source` returns AR's closure wrapper at `named.rb:174` — can't distinguish user scopes from enum helpers via source reading. Discovered during Task 6 implementation. |
+| 8 | 2026-04-23 | Rails 8.1 requires positional enum syntax `enum :status, {active: 0}` not `enum status: {...}`. Test fixtures updated. | Rails 8.1 dropped keyword-arg enum form. Plan was written against Rails 7.x. Not a design change — just syntax adaptation. |
+| 9 | 2026-04-23 | Build script copies Python introspector to `dist/grammar/introspectors/scripts/django_introspect.py`. `__dirname`-based path resolution works in both src (vitest) and dist (production) contexts. | Python AST script must be present at runtime for the CLI `introspect` subcommand. Not shipped in TS compile output by default. |
 
 ---
 
@@ -64,12 +68,15 @@ Every architecture-affecting decision lands here with date + reason. Do not edit
 - [x] Invoke writing-plans skill → plan at `docs/superpowers/plans/2026-04-23-compositional-grammar-plan.md`
 
 ### Implementation phases (spec §13) — not started
-- [ ] **P1. Registry foundation** (~1 week)
-  - [ ] Shared Registry interface (TS + Ruby)
-  - [ ] Rails `RegistryBuilder` service
-  - [ ] npm Django AST parser (Python stdlib)
-  - [ ] CLI `sql-chatbot-agent introspect` subcommand
-  - [ ] Manifest load path in npm package boot
+- [x] **P1. Registry foundation** (~1 week) — **COMPLETE**
+  - [x] Shared Registry interface (TS + Ruby) — Tasks 1, 2
+  - [x] Schema-only registry builder (generic fallback) — Task 3
+  - [x] SchemaService.getTableList() structured accessor — Task 4
+  - [x] Rails `RegistryBuilder` service (enums + associations + timestamps + ranking) — Task 5
+  - [x] Rails scope extraction (via AR relation evaluation, not method_source) — Task 6
+  - [x] npm Django AST parser (Python stdlib subprocess + Node wrapper + fixture) — Task 7
+  - [x] CLI `sql-chatbot-agent introspect` subcommand — Task 8
+  - [x] Manifest load path + schema-drift detection + grammar config — Task 9
 - [ ] **P2. Template compiler** (~3-4 days)
   - [ ] 7 primitives
   - [ ] 8 modifiers
