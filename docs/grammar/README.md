@@ -8,7 +8,7 @@
 
 | Field | Value |
 |---|---|
-| **Current phase** | Design complete. Awaiting user sign-off on spec → implementation plan next. |
+| **Current phase** | Planning complete. Ready to execute P1 (Registry Foundation). |
 | **Branch** | `feature/compositional-grammar` (independent — never merged back) |
 | **Last updated** | 2026-04-23 |
 | **Updated by** | session 2026-04-23 |
@@ -26,7 +26,7 @@ Replace "LLM generates arbitrary SQL every query" with a compositional grammar (
 | Doc | Purpose | Path |
 |---|---|---|
 | Design spec | Architecture, components, decisions | [`docs/superpowers/specs/2026-04-23-compositional-grammar-design.md`](../superpowers/specs/2026-04-23-compositional-grammar-design.md) |
-| Implementation plan | Task-by-task breakdown | (created next by writing-plans skill) |
+| Implementation plan | Task-by-task breakdown (29 tasks across 4 phases) | [`docs/superpowers/plans/2026-04-23-compositional-grammar-plan.md`](../superpowers/plans/2026-04-23-compositional-grammar-plan.md) |
 | Progress log | Session-by-session activity | [`docs/grammar/progress.md`](./progress.md) |
 
 ---
@@ -60,8 +60,8 @@ Every architecture-affecting decision lands here with date + reason. Do not edit
 - [x] Section 5 — testing
 - [x] Write design spec doc
 - [x] Create master index (this file)
-- [ ] User reviews spec
-- [ ] Invoke writing-plans skill
+- [x] User reviews spec (approved 2026-04-23)
+- [x] Invoke writing-plans skill → plan at `docs/superpowers/plans/2026-04-23-compositional-grammar-plan.md`
 
 ### Implementation phases (spec §13) — not started
 - [ ] **P1. Registry foundation** (~1 week)
@@ -85,7 +85,7 @@ Every architecture-affecting decision lands here with date + reason. Do not edit
   - [ ] 120-question replay
 
 ### Acceptance criteria (from spec §12)
-- [ ] All existing tests pass (247 npm + 221 Rails = 468 baseline)
+- [ ] All existing tests pass (287 npm + 350 Rails = 637 baseline)
 - [ ] New unit tests pass (~100)
 - [ ] Integration tests pass (~40)
 - [ ] 120-question replay: ≥ 65% accuracy (target 69%+)
