@@ -1,3 +1,5 @@
+import path from 'path';
+
 export type LLMProvider = 'groq' | 'ollama' | 'openai' | 'openrouter';
 
 export const PROVIDER_PRESETS: Record<LLMProvider, { baseUrl: string; model: string }> = {
@@ -7,6 +9,13 @@ export const PROVIDER_PRESETS: Record<LLMProvider, { baseUrl: string; model: str
   openrouter: { baseUrl: 'https://openrouter.ai/api/v1',    model: 'openrouter/free' },
 };
 
+export interface GrammarConfig {
+  enabled: boolean;
+  manifestPath?: string;
+  confidenceThreshold: number;
+  missLogPath: string;
+}
+
 export interface AgentConfig {
   databaseUrl: string;
   codePaths: string[];
@@ -15,11 +24,16 @@ export interface AgentConfig {
   llmModel: string;
   provider?: LLMProvider;
   secret?: string;
+  grammar?: Partial<GrammarConfig>;
+}
+
+export interface ResolvedConfig extends Omit<AgentConfig, 'grammar'> {
+  grammar: GrammarConfig;
 }
 
 export function resolveConfig(
   userConfig: Partial<AgentConfig> & { databaseUrl: string; groqApiKey?: string }
-): AgentConfig {
+): ResolvedConfig {
   if (!userConfig.databaseUrl) {
     throw new Error('databaseUrl is required');
   }
@@ -50,6 +64,7 @@ export function resolveConfig(
     );
   }
 
+  const raw = userConfig;
   return {
     databaseUrl: userConfig.databaseUrl,
     codePaths: userConfig.codePaths || ['./src'],
@@ -58,5 +73,11 @@ export function resolveConfig(
     llmModel: userConfig.llmModel || process.env.LLM_MODEL || preset.model,
     provider,
     secret: userConfig.secret || process.env.CHATBOT_SECRET || undefined,
+    grammar: {
+      enabled: raw.grammar?.enabled ?? true,
+      manifestPath: raw.grammar?.manifestPath ?? path.resolve(process.cwd(), 'sql-chatbot-manifest.json'),
+      confidenceThreshold: raw.grammar?.confidenceThreshold ?? 0.7,
+      missLogPath: raw.grammar?.missLogPath ?? path.resolve(process.cwd(), 'logs/grammar-misses.ndjson'),
+    },
   };
 }

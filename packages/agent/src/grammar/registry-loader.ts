@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { createRegistry, Registry, Entity, Field, Association } from './registry.js';
 
 const SOFT_DELETE_COLUMNS = ['deleted_at', 'discarded_at', 'archived_at', 'removed_at'];
@@ -102,4 +103,31 @@ export function buildSchemaOnlyRegistry(schema: SchemaServiceLike): Registry {
   }
 
   return r;
+}
+
+export interface LoadOptions {
+  manifestPath: string;
+  schemaService: SchemaServiceLike;
+  onWarn?: (msg: string) => void;
+}
+
+export function loadRegistry(opts: LoadOptions): Registry {
+  const warn = opts.onWarn ?? ((m: string) => console.warn(`[sql-chatbot] ${m}`));
+  if (!fs.existsSync(opts.manifestPath)) {
+    return buildSchemaOnlyRegistry(opts.schemaService);
+  }
+  let raw: any;
+  try {
+    raw = JSON.parse(fs.readFileSync(opts.manifestPath, 'utf8'));
+  } catch (e) {
+    warn(`manifest_parse_error: ${(e as Error).message} — falling back to schema-only`);
+    return buildSchemaOnlyRegistry(opts.schemaService);
+  }
+  const liveTables = new Set(opts.schemaService.getTableList().map(t => t.name));
+  const manifestTables = Object.values(raw.entities ?? {}).map((e: any) => e.table).filter(Boolean) as string[];
+  const driftTables = manifestTables.filter(t => !liveTables.has(t));
+  if (driftTables.length > 0) {
+    warn(`schema_drift_detected: manifest references tables not in DB: ${driftTables.join(', ')}`);
+  }
+  return raw as Registry;
 }
