@@ -55,6 +55,41 @@ Every architecture-affecting decision lands here with date + reason. Do not edit
 
 ---
 
+## Final Code Review (2026-04-23)
+
+Final review of all 36 commits on `feature/compositional-grammar` (SHAs `37affc6..83c5dcf`) ran via the `superpowers:code-reviewer` agent.
+
+**Assessment:** APPROVED with V1.1 follow-up items.
+
+**Critical issues:** None. No data-loss or crash paths. Fallback chain works at every failure mode. LLM-derived input cannot produce SQL injection — registry validates every slot, `validateSql()` runs defense-in-depth.
+
+**Important issues to address before production (V1.1):**
+
+1. **`like` and `in` operators silently fall through to `=`** — both `modifiers.ts` and `modifiers.rb` declare these ops in the type/system prompt but don't map them in `OPS`. LLM may emit them; compiler produces semantically wrong SQL. Not caught by tests (no `like`/`in` coverage). Fix: add `LIKE` and `IN (...)` handling in both languages, or remove the ops from the declared interface.
+
+2. **`grammar_matched` event emitted before validation** (orchestrator.ts:190, orchestrator.rb:437–442). If validation fails, frontend sees inconsistent state. Additionally: TS falls through to LLM on validation failure, Rails emits error — divergent behavior between languages.
+
+3. **SSE event shape divergence**: TS emits `{type: 'grammar_fallback', reason}`; Rails emits `{type: 'grammar_fallback', data: {reason}}`. Consumers must handle both. Standardize on TS shape.
+
+**Minor issues (V1.1):**
+
+4. Intent extractor's `return parsed as Intent` has no runtime validation of `primitive` field. Unknown primitives cause `grammar_exception` in miss log rather than `invalid_primitive:X` — reduces telemetry signal.
+5. `registry_builder.rb` uses `Set.new` without `require "set"` (works in Rails via ActiveSupport but inconsistent with `model_introspector.rb`).
+6. `GrammarConfig` and `Registry` types not exported from `packages/agent/src/index.ts` — needed for users to type their configuration objects.
+7. Rails `try_grammar_path` reads global `SqlChatbot.registry` rather than injected dep — harder to unit-test.
+8. Soft-delete WHERE regex differs between TS (` WHERE `) and Ruby (`\bWHERE\b`) — identical output on all fixtures but inconsistent.
+
+**Architectural strengths confirmed:**
+- Registry is genuine single contract — introspectors write once, compilers read once, halves never touch.
+- Grammar path is cleanly additive — existing LLM pipeline byte-identical when grammar disabled.
+- Double-guard (`grammarConfig.enabled && !!registry`) correctly implemented in both languages.
+- Zero production runtime Python dep achieved (CLI-only).
+- 14 decisions logged with rationale — future maintenance is tractable.
+
+Full review output available in session transcript.
+
+---
+
 ## Task checklist
 
 ### Brainstorm phase
