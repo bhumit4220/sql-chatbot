@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "generatedAt": "2026-04-23",
+  "note": "STUB — 4-question starter. Full 120-question set needs population from prior DB-verified test session (4 apps x 30 questions). Each question needs: app, dbUrl, correctnessCriteria (SQL to verify + expected result shape).",
+  "questions": [
+    {
+      "id": "saleor-1",
+      "app": "saleor",
+      "dbUrl": "postgresql://saleor:saleor@localhost:5434/saleor",
+      "question": "how many orders were placed last week",
+      "correctnessCriteria": {
+        "verifySQL": "SELECT COUNT(*) FROM order_order WHERE created_at >= NOW() - INTERVAL '7 days'",
+        "resultShape": "single-scalar-count"
+      }
+    },
+    {
+      "id": "chatwoot-1",
+      "app": "chatwoot",
+      "dbUrl": "postgresql://chatwoot:chatwoot@localhost:5433/chatwoot_dev",
+      "question": "how many active agents do we have",
+      "correctnessCriteria": {
+        "verifySQL": "SELECT COUNT(*) FROM users WHERE confirmed_at IS NOT NULL",
+        "resultShape": "single-scalar-count"
+      }
+    },
+    {
+      "id": "gitea-1",
+      "app": "gitea",
+      "dbUrl": "postgresql://gitea:gitea@localhost:5437/gitea",
+      "question": "how many repositories do we have",
+      "correctnessCriteria": {
+        "verifySQL": "SELECT COUNT(*) FROM repository",
+        "resultShape": "single-scalar-count"
+      }
+    },
+    {
+      "id": "redmine-1",
+      "app": "redmine",
+      "dbUrl": "postgresql://postgres:postgres@localhost:5439/redmine",
+      "question": "how many projects do we have",
+      "correctnessCriteria": {
+        "verifySQL": "SELECT COUNT(*) FROM projects",
+        "resultShape": "single-scalar-count"
+      }
+    }
+  ]
+}
