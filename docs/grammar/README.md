@@ -8,11 +8,11 @@
 
 | Field | Value |
 |---|---|
-| **Current phase** | **P1 Registry Foundation COMPLETE.** Starting P2 Template Compiler. |
+| **Current phase** | **P2 Template Compiler COMPLETE.** Starting P3 Intent Extractor. |
 | **Branch** | `feature/compositional-grammar` (independent — never merged back) |
-| **Last updated** | 2026-04-23 (end of P1) |
+| **Last updated** | 2026-04-23 (end of P2) |
 | **Updated by** | session 2026-04-23 |
-| **Tests** | 303 npm + 359 Rails = 662 total passing (287+16 npm new, 350+9 Rails new) |
+| **Tests** | 323 npm + 379 Rails = 702 total passing (287+36 npm new, 350+29 Rails new) |
 
 ---
 
@@ -47,6 +47,8 @@ Every architecture-affecting decision lands here with date + reason. Do not edit
 | 7 | 2026-04-23 | Rails scope extraction does NOT use `method_source` (plan's original approach). Instead, evaluate each singleton method as an AR relation and extract WHERE from `.to_sql`. Filter AR-generated enum helpers (`active?`, `not_active`, `statuses`) via `model.defined_enums`. | `method_source` returns AR's closure wrapper at `named.rb:174` — can't distinguish user scopes from enum helpers via source reading. Discovered during Task 6 implementation. |
 | 8 | 2026-04-23 | Rails 8.1 requires positional enum syntax `enum :status, {active: 0}` not `enum status: {...}`. Test fixtures updated. | Rails 8.1 dropped keyword-arg enum form. Plan was written against Rails 7.x. Not a design change — just syntax adaptation. |
 | 9 | 2026-04-23 | Build script copies Python introspector to `dist/grammar/introspectors/scripts/django_introspect.py`. `__dirname`-based path resolution works in both src (vitest) and dist (production) contexts. | Python AST script must be present at runtime for the CLI `introspect` subcommand. Not shipped in TS compile output by default. |
+| 10 | 2026-04-23 | Ruby Modifiers check `enum_values` with both string and symbol keys (`enum_values[str] || enum_values[sym]`). TS strict-casts to String. | Defensive: Ruby's Hash keys are commonly symbols but Registry from introspection yields strings. Catches both without silent errors. |
+| 11 | 2026-04-23 | Ruby TemplateCompiler reads `entity.timestamps` with both string and symbol keys. | Same rationale as #10 — Rails `ModelIntrospector` / `RegistryBuilder` may yield either; avoid fragile coupling. |
 
 ---
 
@@ -77,10 +79,12 @@ Every architecture-affecting decision lands here with date + reason. Do not edit
   - [x] npm Django AST parser (Python stdlib subprocess + Node wrapper + fixture) — Task 7
   - [x] CLI `sql-chatbot-agent introspect` subcommand — Task 8
   - [x] Manifest load path + schema-drift detection + grammar config — Task 9
-- [ ] **P2. Template compiler** (~3-4 days)
-  - [ ] 7 primitives
-  - [ ] 8 modifiers
-  - [ ] Full unit tests
+- [x] **P2. Template compiler** (~3-4 days) — **COMPLETE**
+  - [x] 7 primitives (TS + Ruby) — Tasks 11, 16a
+  - [x] Primitive test coverage (SUM/AVG/MIN_MAX/TOP_N/RANK + error paths) — Task 12
+  - [x] 8 modifiers (TS + Ruby) — Tasks 13, 16b
+  - [x] Modifier test coverage (JOIN/GROUP BY/HAVING/ORDER BY/LIMIT/DISTINCT) — Task 14
+  - [x] Template compiler orchestration with soft-delete auto-injection — Tasks 15, 16c
 - [ ] **P3. Intent extractor** (~3 days)
   - [ ] Entity candidate pre-selection
   - [ ] LLM call + JSON parse

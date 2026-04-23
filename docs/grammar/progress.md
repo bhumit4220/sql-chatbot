@@ -4,6 +4,26 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 
 ---
 
+## 2026-04-23 — P2 Template Compiler COMPLETE
+
+**Done:**
+- **Task 11:** 7 primitives (COUNT, LIST, SUM, AVG, MIN_MAX, TOP_N, RANK) in TS. `pickDisplayFields` prefers id/name/title/label/email. Commit `77abfea`.
+- **Task 12:** 5 more tests covering SUM/AVG/MIN_MAX/TOP_N + error paths. Commit `130a95c`.
+- **Task 13:** All 8 modifier appliers (where, time, join, group_by, having, order_by, limit, distinct). WHERE auto-chains with AND. JOIN derives target table from joinClause. Enum value resolution via registry. Commit `eb530cb`.
+- **Task 14:** 6 more tests covering JOIN/GROUP BY/HAVING/ORDER BY/LIMIT/DISTINCT. Commit `3fd1c4e`.
+- **Task 15:** Template compiler orchestration. Discriminated return `{ok, sql}|{ok:false, reason}`. Auto soft-delete injection (respects existing filter, handles WHERE/GROUP BY/ORDER BY/LIMIT positions). Default `LIMIT 100` for non-aggregate queries. Commit `a28de63`.
+- **Task 16:** Ruby port of primitives + modifiers + template_compiler (3 commits: `55ab1ca`, `de63ccf`, `8c12e21`). Mirrors TS behavior with minor defensive improvements for symbol/string key handling (decisions #10, #11).
+- **Task 17:** End-of-phase docs update (this entry).
+
+**Test counts (end of P2):**
+- npm: 287 baseline + 36 new = **323 passing** (Tasks 1, 3, 4, 7, 8, 9 add 16 in P1; Tasks 11, 12, 13, 14, 15 add 20 in P2)
+- Rails: 350 baseline + 29 new = **379 passing** (Tasks 2, 5, 6 add 9 in P1; Task 16 adds 20 in P2)
+- **Total: 702 passing, 0 failures**
+
+**Next:** P3 Intent Extractor — entity candidate pre-selection, small-LLM intent extraction with confidence gating, ndjson miss logger, Ruby mirrors.
+
+---
+
 ## 2026-04-23 — P1 Registry Foundation COMPLETE
 
 **Session:** implementation phase via subagent-driven development.
