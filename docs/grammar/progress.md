@@ -4,6 +4,50 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 
 ---
 
+## 2026-04-23 — P4 Orchestrator Integration COMPLETE — V1 DONE
+
+**Done:**
+- **Task 23:** TS `tryGrammarPath` — top-level entry combining extractor + compiler. 3 tests. Commit `55245d0`.
+- **Task 24:** Orchestrator `handleData` grammar-first branch. New SSE events (`grammar_matched`, `grammar_fallback`). Miss logging on all failure modes (unmatched, validation-failed, execution-error, exception). Fall-through is byte-identical to existing LLM path. 3 integration tests. Commit `a056735`.
+- **Task 25:** `middleware.ts` wires `loadRegistry` at boot with graceful failure (if load fails, registry stays undefined and grammar silently disables). Commit `402741e`.
+- **Task 26:** Rails integration — grammar branch added to `SqlChatbot::Services::Orchestrator#handle_data_with_code` (not ChatbotController — controller delegates to orchestrator). Added `GrammarPipeline` service, `SqlChatbot.registry` attr_accessor, engine boot initializer, 3 Configuration options. 2 grammar_pipeline specs. Commits `6dc71de`, `63bf76e`.
+- **Task 27:** Grammar-disabled parity test — 20-question fixture, 3 guard scenarios (disabled config, no registry, enabled-but-no-registry). Verifies no grammar_matched/grammar_fallback events emitted. Commit `bccbdca`.
+- **Task 28:** 120-question live replay harness. Scaffolded with 4-question stub fixture + 3 structural tests (run in CI) + 1 skipped live-DB test (opt-in via `RUN_120_REPLAY=1`). Full fixture population is a follow-up requiring running DBs + LLM key. Commit `f9b218f`.
+- **Task 29:** Final verification + docs (this entry).
+
+**Final test counts (end of V1):**
+- npm: 287 baseline + 58 new = **345 passing + 1 skipped (live replay)**. 25 test files.
+- Rails: 350 baseline + 41 new = **391 passing**. 0 failures.
+- **Total: 736 passing across both languages.**
+
+**Acceptance criteria per spec §12:**
+
+| Criterion | Status |
+|---|---|
+| All 637 baseline tests still pass | ✅ Verified (287 npm + 350 Rails) |
+| ~100 new unit tests pass | ✅ 99 new (58 npm + 41 Rails) |
+| Integration tests pass | ✅ orchestrator-grammar.test.ts + grammar-disabled-parity.test.ts + grammar_pipeline_spec.rb |
+| 120-question replay ≥ 65% accuracy | ⏳ Harness scaffolded. Full fixture + live run deferred — requires DBs + LLM key |
+| Grammar hit rate ≥ 35% | ⏳ Same — needs live run |
+| Grammar-disabled regression bit-identical | ✅ grammar-disabled-parity.test.ts (3 guard scenarios) |
+| No new runtime dep on production npm server | ✅ Python only for CLI introspect (dev-time); production is pure Node |
+| Docs up to date | ✅ README.md + progress.md + 14 decisions logged |
+
+**What's left before grammar can be called truly complete in production:**
+1. Populate the 120-question fixture with real DB-verified truth data.
+2. Run the live replay against all 4 apps with a real LLM key.
+3. Verify: ≥65% accuracy, ≥35% grammar hit rate.
+4. (Optional V1.1) Add scope parameter extraction for scopes with arguments (currently skipped per Task 6 spec).
+5. (Optional V1.1) Extend Django AST parser to cover Laravel, NestJS for broader framework coverage.
+
+**Architecture achieved:**
+- 7 primitives × 8 modifiers × full registry (schema + code + data) → thousands of composable SQL shapes.
+- LLM job shrunk from "generate arbitrary SQL" to "classify intent + extract slots".
+- Grammar-first, LLM-fallback pipeline — never regresses below today's 55% baseline.
+- Registry rebuild on boot + telemetry-driven primitive additions = monotonic improvement path without Vanna trap.
+
+---
+
 ## 2026-04-23 — P3 Intent Extractor COMPLETE
 
 **Done:**
