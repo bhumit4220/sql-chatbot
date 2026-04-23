@@ -38,4 +38,38 @@ describe('modifiers', () => {
     expect(sql).toContain('WHERE users.status = 1');
     expect(sql).toContain('AND users.created_at >=');
   });
+
+  it('applies JOIN using association joinClause', () => {
+    const withAssoc: Entity = { ...e, associations: {
+      orders: { name: 'orders', kind: 'has_many', targetEntity: 'order', joinClause: 'users.id = orders.user_id' }
+    }};
+    const out = applyModifier('SELECT COUNT(*) FROM users', { kind: 'join', association: 'orders' }, withAssoc);
+    expect(out).toContain('JOIN orders ON users.id = orders.user_id');
+  });
+
+  it('applies GROUP BY', () => {
+    const e2 = { ...e, fields: { ...e.fields, country: { column: 'country', type: 'text' as const, nullable: false, searchable: true } } };
+    const out = applyModifier('SELECT COUNT(*) FROM users', { kind: 'group_by', field: 'country' }, e2);
+    expect(out).toContain('GROUP BY users.country');
+  });
+
+  it('HAVING requires GROUP BY', () => {
+    expect(() => applyModifier('SELECT 1 FROM users', { kind: 'having', field: 'c', op: 'gt', value: 5 }, e))
+      .toThrow(/GROUP BY/);
+  });
+
+  it('applies ORDER BY', () => {
+    const out = applyModifier('SELECT * FROM users', { kind: 'order_by', field: 'created_at', direction: 'desc' }, e);
+    expect(out).toContain('ORDER BY users.created_at DESC');
+  });
+
+  it('applies LIMIT', () => {
+    const out = applyModifier('SELECT * FROM users', { kind: 'limit', value: 25 }, e);
+    expect(out).toContain('LIMIT 25');
+  });
+
+  it('applies DISTINCT', () => {
+    const out = applyModifier('SELECT email FROM users', { kind: 'distinct' }, e);
+    expect(out).toBe('SELECT DISTINCT email FROM users');
+  });
 });
