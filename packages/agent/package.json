@@ -30,7 +30,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && mkdir -p dist/grammar/introspectors/scripts && cp src/grammar/introspectors/scripts/django_introspect.py dist/grammar/introspectors/scripts/",
     "build:widget": "cd widget-src && npx vite build",
     "test": "vitest run",
     "test:watch": "vitest"
