@@ -23,6 +23,7 @@ RSpec.describe SqlChatbot::Services::RegistryBuilder do
     class User < ActiveRecord::Base
       enum :status, { active: 0, banned: 1 }
       has_many :orders
+      scope :active_users, -> { where(status: 0) }
     end
     class Order < ActiveRecord::Base
       belongs_to :user
@@ -60,5 +61,12 @@ RSpec.describe SqlChatbot::Services::RegistryBuilder do
   it "auto-detects soft-delete column into timestamps.deleted" do
     r = described_class.new.build
     expect(r.entities["user"].timestamps[:deleted]).to eq("deleted_at")
+  end
+
+  it "extracts simple where-only scopes into Scope objects" do
+    r = described_class.new.build
+    scope = r.entities["user"].scopes["active_users"]
+    expect(scope).not_to be_nil
+    expect(scope.where_clause).to include("status")
   end
 end

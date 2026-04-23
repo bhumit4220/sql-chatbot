@@ -56,7 +56,7 @@ module SqlChatbot
           primary_key: model.primary_key.to_s,
           timestamps: detect_timestamps(model),
           fields: build_fields(model),
-          scopes: {},                           # scope extraction handled in Task 6
+          scopes: build_scopes(model),
           associations: build_associations(model),
           ranking_candidates: ranking_candidates_for(model)
         )
@@ -93,6 +93,53 @@ module SqlChatbot
             searchable: type == :text
           )
         end
+      end
+
+      def build_scopes(model)
+        scopes = {}
+        enum_generated = enum_generated_scope_names(model)
+
+        model.singleton_methods(false).each do |method_name|
+          next if enum_generated.include?(method_name)
+
+          begin
+            relation = model.send(method_name)
+            next unless relation.is_a?(ActiveRecord::Relation)
+            sql = relation.to_sql
+            where_match = sql.match(/WHERE\s+(.+?)(?:\s+ORDER\s+BY|\s+LIMIT|\s*$)/i)
+            where_clause = where_match ? where_match[1].strip : ""
+
+            scopes[method_name.to_s] = Grammar::Scope.new(
+              name: method_name.to_s,
+              where_clause: where_clause,
+              param_slots: []
+            )
+          rescue
+            # skip scopes that raise (e.g. require arguments or reference missing columns)
+          end
+        end
+
+        scopes
+      rescue => e
+        warn "[SqlChatbot] scope extraction for #{model}: #{e.message}"
+        {}
+      end
+
+      # Returns a Set of method names that AR auto-generates for enum columns
+      # (e.g. :active, :not_active, :banned, :not_banned, :statuses).
+      def enum_generated_scope_names(model)
+        generated = Set.new
+        model.defined_enums.each do |col, values|
+          values.keys.each do |v|
+            generated << v.to_sym
+            generated << :"not_#{v}"
+          end
+          # AR adds a pluralized class accessor (e.g. User.statuses)
+          generated << :"#{col}s"
+        end
+        generated
+      rescue
+        Set.new
       end
 
       def build_associations(model)
