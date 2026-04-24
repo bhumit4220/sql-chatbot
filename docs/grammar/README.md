@@ -15,7 +15,7 @@
 | **Tests** | 345 npm + 391 Rails = **736 passing**. V1.1 fixes landed: Rails aliasing, TOP_N absorb, fallthrough, Django prefix, order_by default. |
 | **Widget-UI results** | Chatwoot (Rails 7): **6/8 grammar, 7/8 correct**. Saleor (Django): **5/8 grammar, 7/8 correct**. Gitea (Go): **7/8 grammar, 7/8 correct**. Redmine (Rails docker): **8/8 perfect**. MSP (Rails gem native): **9/12 grammar, 12/12 rendered**. |
 | **Blocked** | Mattermost (CSP script-src 'self'), **Directus (CSP)**, **Umami (CSP)**, 2BNCHILL (app-level recursion bug), Medusa (app not running, DB-only) |
-| **Widget-UI also tested on** | n8n (Node/TypeORM, 2/6 gram, 6/6 UI), **Listmonk** (Go mailing, **6/6 = 100%**), **Keycloak** (Java IAM, 92 tables, 5/8 gram + 7/8 UI = complex enterprise schema works) |
+| **Widget-UI also tested on** | n8n (Node/TypeORM, 2/6 gram), **Listmonk** (Go mailing, **6/6 = 100%**), **Keycloak** (Java IAM, 92 tables, 5/8 gram + 7/8 UI), **Taiga** (Django PM, 73 tables, 3/8 gram + 7/8 correct UI — 1 semantic mismatch exposed registry-aliasing gap) |
 | **Security-policy finding** | CSP `script-src 'self'` blocks Mattermost, Directus, Umami. **Trusted Types** policy blocks Miniflux. Of 11 attempted apps, **7 allow out-of-the-box widget injection**, 4 require server-side mount or reverse-proxy. |
 
 ---

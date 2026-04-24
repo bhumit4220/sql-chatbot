@@ -4,6 +4,29 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 
 ---
 
+## 2026-04-24 — Taiga tested (complex 73-table Django project management)
+
+**Taiga** (Django + Postgres, Scrum/Kanban PM, 73 tables) — no CSP, widget loaded. **3/8 grammar (37.5%), 8/8 answers rendered** through widget.
+
+| Question | Path | UI Answer | Correct? |
+|---|---|---|---|
+| how many users | grammar | "4 users" | ✓ |
+| how many projects | grammar | "2 projects" | **✗ wrong — counted `projects_projecttemplate` (2 templates: Scrum, Kanban) instead of `projects_project` (0 actual projects)** |
+| count of user stories | fallback | "No matching records" | ✓ |
+| how many tasks | fallback | "No matching records" | ✓ |
+| how many epics | fallback | "No matching records" | ✓ |
+| how many milestones | fallback | "No matching records" | ✓ |
+| list all projects | grammar | "Scrum / Kanban" | ✗ same bug as above |
+| how many issues | fallback | "Total Issues: 0" | ✓ |
+
+**Important finding — two Django nuances exposed:**
+1. **Disambiguation between similarly-named tables**: `projects_project` (real projects) vs `projects_projecttemplate` (templates). Grammar's entity-candidate selection picked template by row count or name match. Needs entity-selection refinement when multiple tables share prefix.
+2. **Django nested naming**: `<app>_<model>` alias fix only strips when prefix == suffix (`product_product` → `product`). Taiga uses `userstories_userstory`, `epics_epic`, etc. where the app has a plural name — prefix `userstories` ≠ suffix `userstory`. Alias rule needs to also cover plural-to-singular prefix matching.
+
+Both are V1.2 registry-aliasing improvements.
+
+---
+
 ## 2026-04-24 — Keycloak tested (complex 92-table IAM schema)
 
 **Keycloak** (Java / Postgres, enterprise IAM, 92 tables) — no CSP on root, widget loaded. **5/8 grammar (62.5%), 7/8 correct UI answers.**
