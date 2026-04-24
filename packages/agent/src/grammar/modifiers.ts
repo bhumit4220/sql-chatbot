@@ -84,7 +84,8 @@ function applyHaving(sql: string, m: Extract<Modifier, { kind: 'having' }>, e: E
 
 function applyOrderBy(sql: string, m: Extract<Modifier, { kind: 'order_by' }>, e: Entity): string {
   if (!e.fields[m.field]) throw new Error(`order_by field '${m.field}' not on entity ${e.name}`);
-  return `${sql} ORDER BY ${e.table}.${m.field} ${m.direction.toUpperCase()}`;
+  const dir = String(m.direction ?? 'desc').toUpperCase();
+  return `${sql} ORDER BY ${e.table}.${m.field} ${dir}`;
 }
 
 function applyLimit(sql: string, m: Extract<Modifier, { kind: 'limit' }>): string {

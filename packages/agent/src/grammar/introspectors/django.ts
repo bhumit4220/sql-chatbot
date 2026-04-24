@@ -1,9 +1,10 @@
 import { spawn } from 'child_process';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { createRegistry, Registry, Field, Association } from '../registry.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// CommonJS compile target — __dirname is available as a global.
+// Vitest transpiles this correctly for tests.
+const thisDir: string = __dirname;
 
 interface DjangoRawEntity {
   name: string;
@@ -15,7 +16,7 @@ interface DjangoRawEntity {
 
 function runPython(projectPath: string): Promise<{ entities: DjangoRawEntity[] }> {
   return new Promise((resolve, reject) => {
-    const script = path.join(__dirname, 'scripts', 'django_introspect.py');
+    const script = path.join(thisDir, 'scripts', 'django_introspect.py');
     const proc = spawn('python3', [script, projectPath]);
     let stdout = '';
     let stderr = '';

@@ -106,7 +106,8 @@ module SqlChatbot
       def self.apply_order_by(sql, modifier, entity)
         field_name = modifier[:field].to_s
         raise "order_by field '#{field_name}' not on entity #{entity.name}" unless entity.fields[field_name]
-        "#{sql} ORDER BY #{entity.table}.#{field_name} #{modifier[:direction].to_s.upcase}"
+        direction = (modifier[:direction] || modifier["direction"] || "desc").to_s.upcase
+        "#{sql} ORDER BY #{entity.table}.#{field_name} #{direction}"
       end
 
       def self.apply_limit(sql, modifier)

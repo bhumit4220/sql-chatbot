@@ -102,7 +102,51 @@ export function buildSchemaOnlyRegistry(schema: SchemaServiceLike): Registry {
     }
   }
 
+  // Build aliases for common question phrasings.
+  // Rules (skip when alias clashes with a canonical entity name or another alias):
+  //   plural form       → canonical    ("products" → "product_product" if entity has it)
+  //   multi-word spaces → canonical    ("service areas" → "service_area")
+  //   Django app_model  → model        ("product_product" exposes alias "product")
+  //   Django app_model  → model plural ("product_product" exposes alias "products")
+  for (const name of Object.keys(r.entities)) {
+    const altForms: string[] = [];
+    const spaced = name.replace(/_/g, ' ');
+    altForms.push(spaced);
+    altForms.push(pluralizeSimple(spaced));
+    altForms.push(pluralizeSimple(name));
+
+    // Django pattern: <app>_<model> where app === model → strip duplicated prefix
+    const parts = name.split('_');
+    if (parts.length >= 2) {
+      const last = parts[parts.length - 1];
+      const prefix = parts.slice(0, -1).join('_');
+      if (prefix === last) {
+        altForms.push(last);                       // "product"
+        altForms.push(pluralizeSimple(last));      // "products"
+        altForms.push(last.replace(/_/g, ' '));    // same, but readable
+      } else if (parts[0] === last) {
+        // "account_user" etc. — expose "user"
+        altForms.push(last);
+        altForms.push(pluralizeSimple(last));
+      }
+    }
+
+    for (const alt of altForms) {
+      if (!alt || alt === name) continue;
+      if (r.entities[alt]) continue;      // don't shadow real entity
+      if (r.aliases[alt]) continue;       // first-come-first-served on conflicts
+      r.aliases[alt] = name;
+    }
+  }
+
   return r;
+}
+
+function pluralizeSimple(word: string): string {
+  if (!word) return word;
+  if (/(s|x|ch|sh)$/.test(word)) return word + 'es';
+  if (/[^aeiou]y$/.test(word)) return word.slice(0, -1) + 'ies';
+  return word + 's';
 }
 
 export interface LoadOptions {
