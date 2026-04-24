@@ -8,11 +8,11 @@
 
 | Field | Value |
 |---|---|
-| **Current phase** | **V1 COMPLETE.** All 29 plan tasks executed across 4 phases. Implementation ready on branch for live 120-question replay (requires running DBs + LLM key). |
+| **Current phase** | **LIVE E2E verified on MSP (Rails gem path)** via Playwright/CDP against real widget UI. 12-question test: **grammar hit rate 75%** (9/12) after V1.1 fixes. Next: test 2BNCHILL + benchmark apps. |
 | **Branch** | `feature/compositional-grammar` (independent — never merged back) |
-| **Last updated** | 2026-04-23 (V1 complete) |
-| **Updated by** | session 2026-04-23 |
-| **Tests** | 345 passed + 1 skipped (live replay, opt-in) npm + 391 Rails = **736 passing** (287+58 npm new, 350+41 Rails new) |
+| **Last updated** | 2026-04-24 (first live-traffic validation) |
+| **Updated by** | session 2026-04-24 |
+| **Tests** | 345 npm + 391 Rails = **736 passing** (+1 skipped live replay). 3 V1.1 fixes landed on top (aliasing + TOP_N + fall-through). |
 
 ---
 

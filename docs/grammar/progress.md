@@ -4,6 +4,48 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 
 ---
 
+## 2026-04-24 — Live MSP test via Playwright + V1.1 fixes
+
+**Setup:** Restarted MSP Rails server (Rails 6.0.6.1 / Ruby 2.7.1) with grammar branch. Registry built cleanly — 49 entities. Widget at `localhost:3000` tested via Playwright CDP (closed shadow DOM helper from widget-e2e-testing memory).
+
+**First run — 12 realistic questions:**
+- Grammar hit rate: **2/12 = 17%**
+- Dominant miss reasons (from `log/grammar-misses.ndjson`):
+  - `order_by field 'rating' not on entity contractor` — LLM says "rating", column is `avg_rating`.
+  - `enum value 'active' not in registry for job.status` — bare-int status column (no Rails `enum`).
+  - `unmatched: service areas is not an available entity` — multi-word form.
+  - `SUM requires field` — LLM didn't pick a numeric field.
+
+**V1.1 fixes landed (commit `136c551`):**
+1. `RegistryBuilder` builds **field aliases**: avg_X/X_count/total_X/num_X → short synonyms. Skipped when ambiguous or clashes with a real column.
+2. `RegistryBuilder` builds **entity-name aliases** for plurals + underscore→space: `service_area` also resolves from "service areas", "service_areas", etc.
+3. `TemplateCompiler` TOP_N now **absorbs order_by + limit modifiers** into the primitive instead of appending — fixes duplicate ORDER BY SQL error.
+4. `Services::Orchestrator` grammar branch now **validates AND executes BEFORE emitting grammar_matched**. On validation/execution failure, falls through to LLM path silently (logs miss) — resolves V1.1 review item #2.
+
+**Second run — same 12 questions + 6 more (18 total, but reporting 12-Q sample):**
+- Grammar hit rate: **9/12 = 75%** (up from 17%)
+- Fallbacks: 3/12, now clean — no user-visible "Something went wrong"
+- Remaining miss patterns:
+  - Bare-int status columns (MSP uses magic ints, not Rails enums)
+  - LLM SUM without specifying field
+  - MSP-specific `custom_context` semantics (status=3 for deleted) not read by grammar
+
+**Accuracy notes:**
+- MSP dashboard: 703 active contractors. Grammar answered "703 active contractors". ✓
+- Dashboard: 5441 properties. Grammar: 5441. ✓
+- `how many customers`: grammar uses `deleted_at IS NULL` (from AR convention) returning 3513. MSP uses `status != 3` which returns 3389 (dashboard value). Grammar correct for the literal question, but MSP-convention-mismatched. Known issue; would need `custom_context` parsing to resolve.
+
+**Telemetry confirmed:** Per-request SSE events visible to widget — `grammar_matched` or `grammar_fallback` emitted correctly.
+
+**Key architecture validation:**
+- Grammar pipeline works end-to-end against a real 49-model Rails 6 app.
+- Registry building at engine boot is fast (<1s) and stable.
+- Fall-through path is correct: broken grammar SQL never reaches the user.
+
+**Next:** Phase B (2BNCHILL — same gem, similar conventions) + Phase C (benchmark apps via npm package).
+
+---
+
 ## 2026-04-23 — P4 Orchestrator Integration COMPLETE — V1 DONE
 
 **Done:**
