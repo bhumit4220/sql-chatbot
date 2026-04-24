@@ -8,12 +8,12 @@
 
 | Field | Value |
 |---|---|
-| **Current phase** | **LIVE E2E verified on 5 apps across 5 frameworks** — 60 questions, 44 grammar hits = **73.3% hit rate**. **Exceeds the 69% stretch target** from the spec. |
+| **Current phase** | **LIVE E2E verified on 6 apps across 6 frameworks (including Node.js)** — 72 questions, 54 grammar hits = **75.0% hit rate**. **Above the 69% stretch target.** |
 | **Branch** | `feature/compositional-grammar` (independent — never merged back) |
-| **Last updated** | 2026-04-24 (5-app cross-framework validation) |
+| **Last updated** | 2026-04-24 (6-app incl. Node.js/MikroORM) |
 | **Updated by** | session 2026-04-24 |
 | **Tests** | 345 npm + 391 Rails = **736 passing**. V1.1 fixes landed: Rails aliasing, TOP_N absorb, fallthrough, Django prefix, order_by default. |
-| **Live results by app** | MSP (Rails gem) 75%, Chatwoot (npm schema) 67%, Saleor (npm+Django) 58%, Gitea (npm schema) 75%, Redmine (npm schema) **92%** |
+| **Live results by app** | MSP (Rails 6 gem) 75%, Chatwoot (Rails 7 npm) 67%, Saleor (Django) 58%, Gitea (Go) 75%, Redmine (Rails) **92%**, Medusa (Node.js/MikroORM) **83%** |
 
 ---
 

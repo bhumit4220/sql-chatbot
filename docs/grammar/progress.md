@@ -4,9 +4,9 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 
 ---
 
-## 2026-04-24 — Full 5-app cross-framework validation (extended)
+## 2026-04-24 — 6-app cross-framework validation (incl. Node.js)
 
-**Summary:** 60 questions total across **5 apps / 5 frameworks**. Grammar hit rate **44/60 = 73.3%** — exceeds the 69% stretch target from spec §12.
+**Summary:** 72 questions total across **6 apps / 6 frameworks** (Rails, Rails, Django, Go, Rails, Node.js/TypeScript). Grammar hit rate **54/72 = 75.0%** — above the 69% stretch target from spec §12.
 
 | App | Framework | Integration path | Grammar hits | Fallbacks | Rate |
 |-----|-----------|------------------|--------------|-----------|------|
@@ -15,6 +15,7 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 | Saleor | Django docker | npm schema-only + Django prefix aliases | 7 | 5 | **58%** |
 | Gitea | Go docker | npm schema-only | 9 | 3 | **75%** |
 | Redmine | Rails docker | npm schema-only | 11 | 1 | **92%** |
+| **Medusa** | **Node.js / TypeScript / MikroORM** | **npm schema-only** | **10** | **2** | **83%** |
 
 **V1.1 fixes landed this session (commits `136c551` + `b9475a3`):**
 1. `RegistryBuilder` field aliases — `avg_X/X_count/total_X/num_X` → short synonyms. Only when unambiguous.
@@ -46,6 +47,7 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 - **Schema-only path is surprisingly strong.** Chatwoot, Gitea, Redmine all use npm schema-only (no Rails gem, no Django manifest) and hit 67%, 75%, 92% respectively.
 - **Framework-specific code parsing not always needed.** For question patterns that grammar covers (COUNT, LIST, simple JOIN/filter), schema + FK + data profiling alone resolve the registry adequately.
 - **Gitea validates Go support.** No ORM, no enum declarations — purely schema-driven, and still 75%. Gitea's `user` table (PG reserved word!) was queried as `FROM user` and returned correctly, suggesting PG's lenient parser or table-name quoting downstream.
+- **Medusa validates Node.js support.** MikroORM's `deleted_at` convention was auto-detected by schema-only registry — grammar applied soft-delete filter correctly on every query without any framework-specific code. 83% hit rate, second-highest after Redmine. Uses singular table names (product, order, customer, region, cart, store) which the `singularize` handles natively.
 
 **Next candidates:**
 - V1.1 bug fixes for remaining miss patterns (custom_context parsing, intent extractor prompt tuning)
