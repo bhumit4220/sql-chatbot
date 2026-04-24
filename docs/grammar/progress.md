@@ -4,6 +4,32 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 
 ---
 
+## 2026-04-24 — Additional apps tested (Directus, Umami, n8n)
+
+**Apps spun up fresh via Docker:**
+- **Directus** (Node / Postgres CMS, 24 tables) — **widget BLOCKED**: `Content-Security-Policy: script-src 'self' 'unsafe-eval'` rejects cross-origin widget script. Same issue as Mattermost.
+- **Umami** (Node / Postgres analytics, 18 tables) — **widget BLOCKED**: same CSP `script-src 'self'`.
+- **n8n** (Node / Postgres workflow automation, 76 tables) — **no CSP**, widget loaded successfully. **2/6 grammar hits** (33%), 6/6 correct UI answers.
+
+**n8n widget results:**
+| Question | Path | UI Answer |
+|---|---|---|
+| how many users | grammar | "1 user registered" |
+| how many workflows | fallback | "No matching records found" |
+| how many credentials | fallback | "No matching records found" |
+| count of tags | fallback | "No matching records found" |
+| how many webhooks | fallback | "0 webhooks are currently available" |
+| list all projects | grammar | "1 project: Unnamed Project" |
+
+**Root cause of n8n's low grammar rate:** TypeORM uses `_entity` suffix convention (`workflow_entity`, `credentials_entity`, `tag_entity`, `webhook_entity`). Schema-only registry doesn't strip this suffix, so when LLM says `entity: 'workflow'`, registry has only `workflow_entity` and lookup fails. Identical pattern to Django's `<app>_<model>` — needs analogous alias fix. Noted as V1.2 item.
+
+**CSP is a real deployment wall.** Of the 3 new apps, **2 had strict CSP** blocking widget injection. Combined with Mattermost earlier, **that's 3/7 apps tested where cross-origin widget injection is blocked.** Real deployment requires either:
+1. Server-side widget mount (Rails gem, Django middleware, Express middleware)
+2. Reverse proxy to serve widget from the host's origin
+3. Admin toggles CSP off (hostile to adopters)
+
+---
+
 ## 2026-04-24 — Real widget-UI sweep across 4 apps (CDP into closed shadow DOM)
 
 **Summary:** Using the proven CDP harness (button-disabled wait + React-safe setter + bubble count tracking), ran 8 questions through the **actual widget UI** on 4 apps. Previously-broken Chatwoot harness fixed.

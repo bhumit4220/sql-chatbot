@@ -14,7 +14,9 @@
 | **Updated by** | session 2026-04-24 |
 | **Tests** | 345 npm + 391 Rails = **736 passing**. V1.1 fixes landed: Rails aliasing, TOP_N absorb, fallthrough, Django prefix, order_by default. |
 | **Widget-UI results** | Chatwoot (Rails 7): **6/8 grammar, 7/8 correct**. Saleor (Django): **5/8 grammar, 7/8 correct**. Gitea (Go): **7/8 grammar, 7/8 correct**. Redmine (Rails docker): **8/8 perfect**. MSP (Rails gem native): **9/12 grammar, 12/12 rendered**. |
-| **Blocked** | Mattermost (CSP script-src 'self'), 2BNCHILL (app-level recursion bug), Medusa (app not running, DB-only) |
+| **Blocked** | Mattermost (CSP script-src 'self'), **Directus (CSP)**, **Umami (CSP)**, 2BNCHILL (app-level recursion bug), Medusa (app not running, DB-only) |
+| **Widget-UI also tested on** | n8n (Node/TypeORM workflow, no CSP): **2/6 grammar, 6/6 correct UI**. Low grammar rate due to TypeORM `_entity` suffix naming — alias fix analogous to Django prefix needed. |
+| **CSP finding** | 3 of 7 tested apps have strict CSP blocking cross-origin widget injection (Mattermost, Directus, Umami). Real adoption requires server-side mount or reverse-proxy. |
 
 ---
 
