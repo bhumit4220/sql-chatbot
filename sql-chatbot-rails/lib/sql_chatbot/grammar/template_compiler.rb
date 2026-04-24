@@ -15,17 +15,39 @@ module SqlChatbot
         return { ok: false, reason: "entity '#{intent[:entity]}' not in registry" } unless entity
 
         begin
+          modifiers = Array(intent[:modifiers])
+          primitive_sym = intent[:primitive].to_s
+          rank_field = intent[:rank_field]
+          limit_n    = intent[:n]
+
+          # TOP_N has its own ORDER BY + LIMIT baked in. If the intent also
+          # includes order_by / limit modifiers, they describe how TOP_N should
+          # rank — absorb them into the primitive instead of appending, which
+          # would produce duplicate ORDER BY / LIMIT clauses.
+          if primitive_sym == "TOP_N"
+            order_mod = modifiers.find { |m| (m[:kind] || m["kind"]).to_s == "order_by" }
+            limit_mod = modifiers.find { |m| (m[:kind] || m["kind"]).to_s == "limit" }
+            if order_mod
+              rank_field ||= order_mod[:field] || order_mod["field"]
+              modifiers = modifiers.reject { |m| m.equal?(order_mod) }
+            end
+            if limit_mod
+              limit_n ||= limit_mod[:value] || limit_mod["value"]
+              modifiers = modifiers.reject { |m| m.equal?(limit_mod) }
+            end
+          end
+
           sql = Primitives.build(
             primitive:  intent[:primitive],
             entity:     entity,
             field:      intent[:field],
             which:      intent[:which],
-            n:          intent[:n],
-            rank_field: intent[:rank_field],
+            n:          limit_n,
+            rank_field: rank_field,
             group_by:   intent[:group_by]
           )
 
-          Array(intent[:modifiers]).each do |m|
+          modifiers.each do |m|
             sql = Modifiers.apply(sql, m, entity)
           end
 
@@ -34,7 +56,6 @@ module SqlChatbot
             sql = with_soft_delete(sql, entity, deleted_col)
           end
 
-          primitive_sym = intent[:primitive].to_s
           unless sql =~ /LIMIT \d+/i || primitive_sym == "COUNT" || sql =~ /COUNT\(/i
             sql = "#{sql} LIMIT 100"
           end

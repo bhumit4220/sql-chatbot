@@ -428,7 +428,7 @@ Reuse the same 120 questions validated at 55% today. Target ≥ 65% (V1 minimum,
 
 Before work on `feature/compositional-grammar` is considered complete:
 
-1. All existing tests pass (247 npm + 221 Rails = 468 baseline).
+1. All existing tests pass (287 npm + 350 Rails = 637 baseline).
 2. New unit tests all pass (target ~100).
 3. Integration tests all pass (target ~40).
 4. 120-question replay: ≥ 65% accuracy (min), target 69%+.

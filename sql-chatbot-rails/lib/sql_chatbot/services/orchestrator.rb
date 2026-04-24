@@ -6,6 +6,7 @@ require "sql_chatbot/prompts/generate_sql"
 require "sql_chatbot/prompts/answer"
 require "sql_chatbot/services/sql_executor"
 require "sql_chatbot/services/grammar_pipeline"
+require "sql_chatbot/grammar/miss_logger"
 
 module SqlChatbot
   module Services
@@ -434,24 +435,42 @@ module SqlChatbot
 
         sql = result[:sql]
 
-        yielder.yield({ type: "grammar_matched", data: {} })
-        yielder.yield({ type: "sql", query: sql, explanation: "grammar" })
-
+        # Validate BEFORE emitting grammar_matched — if SQL is bad, fall through
+        # silently to the LLM path rather than showing the user a broken SQL.
         validation = SqlExecutor.validate_sql(sql)
         unless validation[:valid]
-          yielder.yield({ type: "error", message: "SQL validation failed: #{validation[:reason]}" })
-          return :handled
+          SqlChatbot::Grammar::MissLogger.log(miss_log, {
+            question: question,
+            reason: "grammar_validation_failed: #{validation[:reason]}",
+            extracted: result[:intent],
+            resulting_sql: sql,
+          }) rescue nil
+          yielder.yield({ type: "grammar_fallback", data: { reason: "grammar_validation_failed" } })
+          return :miss
         end
 
+        # Try execution BEFORE emitting grammar_matched. If execution fails
+        # (e.g., duplicate ORDER BY from a TOP_N + order_by quirk), the user
+        # should not see a broken grammar response — fall through to LLM.
         yielder.yield({ type: "executing" })
-
         begin
           db_result = SqlExecutor.execute_sql(validation[:sql])
         rescue => e
           log_error(e)
-          yielder.yield({ type: "error", message: friendly_error_message(e) })
-          return :handled
+          SqlChatbot::Grammar::MissLogger.log(miss_log, {
+            question: question,
+            reason: "grammar_execution_error: #{e.class}: #{e.message.to_s.lines.first&.strip}",
+            extracted: result[:intent],
+            resulting_sql: validation[:sql],
+          }) rescue nil
+          yielder.yield({ type: "grammar_fallback", data: { reason: "grammar_execution_error" } })
+          return :miss
         end
+
+        # Only now — after successful validation AND execution — commit to the
+        # grammar path by emitting grammar_matched and the SQL event.
+        yielder.yield({ type: "grammar_matched", data: {} })
+        yielder.yield({ type: "sql", query: validation[:sql], explanation: "grammar" })
 
         answer_messages = Prompts::Answer.build_messages(
           question: question,

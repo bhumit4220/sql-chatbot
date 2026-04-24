@@ -13,7 +13,37 @@ module SqlChatbot
           entity_name = model.name.underscore
           entities[entity_name] = build_entity(model, entity_name)
         end
-        Grammar::Registry.new(framework: "rails", entities: entities)
+        Grammar::Registry.new(framework: "rails", entities: entities, aliases: build_entity_aliases(entities))
+      end
+
+      # Build aliases that map common question phrasings to canonical entity names.
+      # Rules (no clash with a real canonical entity name):
+      #   multi-word form (spaces) → snake_case entity name
+      #     "service areas" → "service_area"
+      #   plural form → singular entity name
+      #     "users" / "customers" → already handled by string-match scoring,
+      #     but we also explicitly map plural-snake → canonical
+      def build_entity_aliases(entities)
+        aliases = {}
+        entities.each_key do |name|
+          # "service_area" → "service areas", "service area", "service_areas"
+          spaced     = name.tr("_", " ")
+          spaced_plu = pluralize_simple(spaced)
+          snake_plu  = pluralize_simple(name)
+          [spaced, spaced_plu, snake_plu].each do |alt|
+            next if alt == name
+            next if entities.key?(alt)
+            next if aliases.key?(alt)
+            aliases[alt] = name
+          end
+        end
+        aliases
+      end
+
+      def pluralize_simple(word)
+        return word + "es" if word.end_with?("s", "x", "ch", "sh")
+        return word[0..-2] + "ies" if word.end_with?("y") && !%w[a e i o u].include?(word[-2])
+        word + "s"
       end
 
       private
@@ -80,10 +110,11 @@ module SqlChatbot
 
       def build_fields(model)
         enums = model.defined_enums
-        model.columns_hash.each_with_object({}) do |(col, info), h|
+        fields = {}
+        model.columns_hash.each do |col, info|
           enum_vals = enums[col]
           type = enum_vals ? :enum : map_type(info.type)
-          h[col] = Grammar::Field.new(
+          fields[col] = Grammar::Field.new(
             column: col,
             type: type,
             nullable: info.null,
@@ -93,6 +124,44 @@ module SqlChatbot
             searchable: type == :text
           )
         end
+        # Add field aliases for common human phrasings. For each real column,
+        # detect short synonyms and register alias keys pointing to the same
+        # Field struct. Only register an alias if it doesn't clash with an
+        # actual column and doesn't become ambiguous across two columns.
+        add_field_aliases!(fields)
+        fields
+      end
+
+      # Register alias keys on the fields hash so lookups like
+      # fields["rating"] work when the real column is "avg_rating".
+      # Rules:
+      #   avg_X / X_avg → X           (e.g., avg_rating → rating)
+      #   X_count       → count       (e.g., jobs_count → count)
+      #   total_X / X_total → total   (e.g., total_amount → total)
+      #   num_X         → X           (e.g., num_orders → orders)
+      # An alias is only added if (a) no real column has that name and
+      # (b) at most one existing field maps to that alias across the model.
+      def add_field_aliases!(fields)
+        alias_candidates = Hash.new { |h, k| h[k] = [] }
+        fields.each do |col, field|
+          synonyms_for(col).each { |syn| alias_candidates[syn] << field }
+        end
+        alias_candidates.each do |alias_key, matching_fields|
+          next if fields.key?(alias_key)             # don't shadow real column
+          next unless matching_fields.size == 1      # skip ambiguous aliases
+          fields[alias_key] = matching_fields.first
+        end
+      end
+
+      def synonyms_for(col)
+        syns = []
+        if col =~ /\Aavg_(.+)\z/        then syns << Regexp.last_match(1) end
+        if col =~ /\A(.+)_avg\z/        then syns << Regexp.last_match(1) end
+        if col =~ /\A(.+)_count\z/      then syns << "count"; syns << Regexp.last_match(1) end
+        if col =~ /\Atotal_(.+)\z/      then syns << "total"; syns << Regexp.last_match(1) end
+        if col =~ /\A(.+)_total\z/      then syns << "total" end
+        if col =~ /\Anum_(.+)\z/        then syns << Regexp.last_match(1) end
+        syns
       end
 
       def build_scopes(model)
