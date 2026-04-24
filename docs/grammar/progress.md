@@ -4,6 +4,38 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 
 ---
 
+## 2026-04-24 — Real widget UI test on Chatwoot (corrects earlier API-only testing)
+
+**Motivation:** User correctly flagged that `page.evaluate(fetch())` tests were "curl in browser," not true widget UI tests. Re-ran Chatwoot through the actual widget UI via CDP into the closed shadow DOM — typing into `.chatbot-input input`, clicking the send button, reading `.chatbot-msg.assistant` bubbles.
+
+**Widget UI interaction setup (saved to `feedback_widget_ui_only` memory):**
+- Inject widget script into app's page.
+- Open panel via `.chatbot-fab` click (panel DOM not rendered until then).
+- React-safe input: use native `HTMLInputElement` value setter + dispatch `input` event so React's controlled state updates.
+- **Wait for button to NOT be disabled between questions** — widget disables send during streaming; sending before ready was dropping every 2nd question.
+
+**Chatwoot widget-UI results (8 questions):** 7/8 correct meaningful answers reached the user through the actual widget bubble.
+
+| Q | Widget rendered |
+|---|---|
+| how many conversations | ✓ "There is 1 conversation" |
+| how many contacts | ✓ "There are 50 contacts" |
+| how many agents | ✗ `relation "agents" does not exist` (error surfaced to user — LLM fallback SQL referenced wrong table) |
+| count of accounts | ✓ "There are 2 accounts" |
+| how many inboxes | ✓ "There are 2 inboxes" |
+| list all teams | ✓ "There are 2 teams: support and sales" |
+| how many messages | ✓ "There are 0 messages" |
+| list labels | ✓ "There are 4 labels: bug, feature, urgent, and billing" |
+
+**Finding:** The grammar→SQL→answer pipeline works end-to-end through the real browser widget. The one error was LLM-fallback-generated SQL against a non-existent table — fallback path doesn't retry on missing-table errors (only missing-column). Noted as V1.2 bug.
+
+**CSP limitation surfaced:** Mattermost's `Content-Security-Policy: script-src 'self'` blocks the cross-origin widget injection entirely. Apps with strict CSP need server-side integration (Rails gem mount, Django middleware) OR a user-initiated approach (browser extension). Not a grammar issue.
+
+**Remaining apps tested previously (API-level only, widget UI not validated live):**
+MSP (via gem, actual widget), Saleor (npm schema), Gitea (npm schema), Redmine (npm schema), Medusa (npm schema). Architectural pipeline identical; widget UI re-verification pending per-app.
+
+---
+
 ## 2026-04-24 — 6-app cross-framework validation (incl. Node.js)
 
 **Summary:** 72 questions total across **6 apps / 6 frameworks** (Rails, Rails, Django, Go, Rails, Node.js/TypeScript). Grammar hit rate **54/72 = 75.0%** — above the 69% stretch target from spec §12.
