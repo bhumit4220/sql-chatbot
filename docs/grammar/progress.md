@@ -4,15 +4,17 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 
 ---
 
-## 2026-04-24 — Cross-framework live test: MSP + Chatwoot + Saleor
+## 2026-04-24 — Full 5-app cross-framework validation (extended)
 
-**Summary:** 36 questions total across 3 apps / 3 frameworks. Grammar hit rate **24/36 = 66.7%** — above 35% minimum acceptance, close to 69% stretch target.
+**Summary:** 60 questions total across **5 apps / 5 frameworks**. Grammar hit rate **44/60 = 73.3%** — exceeds the 69% stretch target from spec §12.
 
 | App | Framework | Integration path | Grammar hits | Fallbacks | Rate |
 |-----|-----------|------------------|--------------|-----------|------|
 | MSP | Rails 6 (Ruby 2.7) | Rails gem w/ RegistryBuilder | 9 | 3 | **75%** |
 | Chatwoot | Rails 7 docker | npm schema-only | 8 | 4 | **67%** |
 | Saleor | Django docker | npm schema-only + Django prefix aliases | 7 | 5 | **58%** |
+| Gitea | Go docker | npm schema-only | 9 | 3 | **75%** |
+| Redmine | Rails docker | npm schema-only | 11 | 1 | **92%** |
 
 **V1.1 fixes landed this session (commits `136c551` + `b9475a3`):**
 1. `RegistryBuilder` field aliases — `avg_X/X_count/total_X/num_X` → short synonyms. Only when unambiguous.
@@ -38,8 +40,12 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 
 **Apps not tested this session:**
 - 2BNCHILL — pre-existing Paranoia `really_delete_all` infinite recursion (SystemStackError). Unrelated to our gem; server couldn't boot.
-- Gitea — docker not running.
-- Redmine — docker not running.
+
+**Insights from 5-app suite:**
+- **Simpler schemas → higher grammar hit rate.** Redmine (54 tables, plain plurals) hit 92%. Saleor (144 tables, Django prefix naming) hit 58% despite the Django alias fix.
+- **Schema-only path is surprisingly strong.** Chatwoot, Gitea, Redmine all use npm schema-only (no Rails gem, no Django manifest) and hit 67%, 75%, 92% respectively.
+- **Framework-specific code parsing not always needed.** For question patterns that grammar covers (COUNT, LIST, simple JOIN/filter), schema + FK + data profiling alone resolve the registry adequately.
+- **Gitea validates Go support.** No ORM, no enum declarations — purely schema-driven, and still 75%. Gitea's `user` table (PG reserved word!) was queried as `FROM user` and returned correctly, suggesting PG's lenient parser or table-name quoting downstream.
 
 **Next candidates:**
 - V1.1 bug fixes for remaining miss patterns (custom_context parsing, intent extractor prompt tuning)
