@@ -4,6 +4,30 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 
 ---
 
+## 2026-04-24 — Real widget-UI sweep across 4 apps (CDP into closed shadow DOM)
+
+**Summary:** Using the proven CDP harness (button-disabled wait + React-safe setter + bubble count tracking), ran 8 questions through the **actual widget UI** on 4 apps. Previously-broken Chatwoot harness fixed.
+
+| App | Framework | Grammar hits | Correct UI answers |
+|-----|-----------|--------------|---------------------|
+| Chatwoot | Rails 7 docker | 6/8 (75%) | 7/8 |
+| Saleor | Django docker | 5/8 (62.5%) | 7/8 |
+| Gitea | Go docker | 7/8 (87.5%) | 7/8 |
+| Redmine | Rails docker | **8/8 (100%)** | **8/8** |
+| **Combined** | — | **26/32 = 81.3%** | **29/32 = 90.6%** |
+
+Plus MSP (native Rails gem widget, different integration path): **9/12 grammar, 12/12 rendered** (test earlier in session).
+
+**All widget-UI answers were delivered via real `.chatbot-msg.assistant` bubbles** — no fetch shortcuts, no API-only tests. Each question typed into `.chatbot-input input`, Send button clicked via DOM dispatch, stream waited for button-not-disabled state before moving on.
+
+**Apps blocked from widget-UI testing (documented):**
+- **Mattermost** — `Content-Security-Policy: script-src 'self'` rejects cross-origin widget injection.
+- **2BNCHILL** — pre-existing Paranoia gem infinite recursion; app won't boot. Gem-unrelated.
+- **Medusa** — Node.js app process not running (only DB containers). Previous 83% result was via the direct API, not widget UI.
+- **Plane** — empty DB.
+
+---
+
 ## 2026-04-24 — Real widget UI test on Chatwoot (corrects earlier API-only testing)
 
 **Motivation:** User correctly flagged that `page.evaluate(fetch())` tests were "curl in browser," not true widget UI tests. Re-ran Chatwoot through the actual widget UI via CDP into the closed shadow DOM — typing into `.chatbot-input input`, clicking the send button, reading `.chatbot-msg.assistant` bubbles.

@@ -8,12 +8,13 @@
 
 | Field | Value |
 |---|---|
-| **Current phase** | **LIVE E2E verified on 6 apps across 6 frameworks (including Node.js)** — 72 questions, 54 grammar hits = **75.0% hit rate**. **Above the 69% stretch target.** |
+| **Current phase** | **REAL widget UI tested on 4 apps (Chatwoot, Saleor, Gitea, Redmine) via CDP into closed shadow DOM. 32 questions. 81.3% grammar hit rate, 90.6% correct answers rendered.** Plus MSP via native Rails gem widget (9/12 grammar, all rendered). |
 | **Branch** | `feature/compositional-grammar` (independent — never merged back) |
-| **Last updated** | 2026-04-24 (6-app incl. Node.js/MikroORM) |
+| **Last updated** | 2026-04-24 (real widget-UI validation) |
 | **Updated by** | session 2026-04-24 |
 | **Tests** | 345 npm + 391 Rails = **736 passing**. V1.1 fixes landed: Rails aliasing, TOP_N absorb, fallthrough, Django prefix, order_by default. |
-| **Live results by app** | MSP (Rails 6 gem) 75%, Chatwoot (Rails 7 npm) 67%, Saleor (Django) 58%, Gitea (Go) 75%, Redmine (Rails) **92%**, Medusa (Node.js/MikroORM) **83%** |
+| **Widget-UI results** | Chatwoot (Rails 7): **6/8 grammar, 7/8 correct**. Saleor (Django): **5/8 grammar, 7/8 correct**. Gitea (Go): **7/8 grammar, 7/8 correct**. Redmine (Rails docker): **8/8 perfect**. MSP (Rails gem native): **9/12 grammar, 12/12 rendered**. |
+| **Blocked** | Mattermost (CSP script-src 'self'), 2BNCHILL (app-level recursion bug), Medusa (app not running, DB-only) |
 
 ---
 
