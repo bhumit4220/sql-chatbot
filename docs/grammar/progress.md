@@ -4,6 +4,30 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 
 ---
 
+## 2026-04-24 — Additional apps tested (Listmonk, Miniflux)
+
+**Listmonk** (Go / Postgres mailing list manager, 16 tables) — **no CSP**, widget loaded. **6/6 grammar = 100%.** All 6 correct UI answers:
+- how many subscribers → "2 subscribers" ✓
+- how many campaigns → "1 campaign" ✓
+- how many lists → "2 lists" ✓
+- count of templates → "4 templates" ✓
+- how many media files → "No matching records" (0 media — correct) ✓
+- list all lists → "Default list / Opt-in list" ✓
+
+**Miniflux** (Go / Postgres RSS reader, 14 tables) — widget **BLOCKED**: uses HTML **Trusted Types** policy, which is stricter than CSP. `Failed to set the 'src' property on 'HTMLScriptElement': This document requires 'TrustedScriptURL' assignment`.
+
+**Vikunja** (Go / Postgres task manager) — DB never migrated (container silently failed). Skipped.
+
+**Updated security-policy observations:**
+- CSP `script-src 'self'` blocks: Mattermost, Directus, Umami
+- Trusted Types blocks: Miniflux
+- No restrictions (widget works): Chatwoot, Saleor, Gitea, Redmine, n8n, **Listmonk**, and MSP (native mount)
+
+**Apps where `<script src="http://chatbot/widget.js">` works out of the box: 7.**
+**Apps where server-side mount or reverse-proxy is required: 4.**
+
+---
+
 ## 2026-04-24 — Additional apps tested (Directus, Umami, n8n)
 
 **Apps spun up fresh via Docker:**
