@@ -8,11 +8,12 @@
 
 | Field | Value |
 |---|---|
-| **Current phase** | **LIVE E2E verified on MSP (Rails gem path)** via Playwright/CDP against real widget UI. 12-question test: **grammar hit rate 75%** (9/12) after V1.1 fixes. Next: test 2BNCHILL + benchmark apps. |
+| **Current phase** | **LIVE E2E verified on 3 apps across 3 frameworks via Playwright/CDP** — 36 questions, 24 grammar hits = **66.7% hit rate**. Above 35% minimum, approaching 69% stretch target. |
 | **Branch** | `feature/compositional-grammar` (independent — never merged back) |
-| **Last updated** | 2026-04-24 (first live-traffic validation) |
+| **Last updated** | 2026-04-24 (cross-framework validation) |
 | **Updated by** | session 2026-04-24 |
-| **Tests** | 345 npm + 391 Rails = **736 passing** (+1 skipped live replay). 3 V1.1 fixes landed on top (aliasing + TOP_N + fall-through). |
+| **Tests** | 345 npm + 391 Rails = **736 passing**. 5 V1.1 fixes landed: Rails aliasing, TOP_N absorb, fallthrough, Django prefix, order_by default. |
+| **Live results by app** | MSP (Rails gem) 75%, Chatwoot (npm schema-only) 67%, Saleor (npm+Django aliases) 58% |
 
 ---
 

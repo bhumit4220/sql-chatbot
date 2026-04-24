@@ -4,6 +4,50 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 
 ---
 
+## 2026-04-24 — Cross-framework live test: MSP + Chatwoot + Saleor
+
+**Summary:** 36 questions total across 3 apps / 3 frameworks. Grammar hit rate **24/36 = 66.7%** — above 35% minimum acceptance, close to 69% stretch target.
+
+| App | Framework | Integration path | Grammar hits | Fallbacks | Rate |
+|-----|-----------|------------------|--------------|-----------|------|
+| MSP | Rails 6 (Ruby 2.7) | Rails gem w/ RegistryBuilder | 9 | 3 | **75%** |
+| Chatwoot | Rails 7 docker | npm schema-only | 8 | 4 | **67%** |
+| Saleor | Django docker | npm schema-only + Django prefix aliases | 7 | 5 | **58%** |
+
+**V1.1 fixes landed this session (commits `136c551` + `b9475a3`):**
+1. `RegistryBuilder` field aliases — `avg_X/X_count/total_X/num_X` → short synonyms. Only when unambiguous.
+2. `RegistryBuilder` entity-name aliases — multi-word spaced form + plural form.
+3. `TemplateCompiler` TOP_N absorbs order_by + limit modifiers (prevents dup ORDER BY SQL error).
+4. `Orchestrator` Rails grammar branch — validates AND executes before emitting grammar_matched; falls through to LLM on any failure (fixes V1.1 review item #2).
+5. npm `registry-loader` — Django prefix aliasing (`product_product` → exposes alias `product`, `products`, `product product`). Also spaced + plural forms.
+6. `modifiers` TS + Ruby — `order_by` direction defaults to `desc` when LLM omits it.
+7. `django.ts` — compiles to CJS (was using `import.meta` which target CJS disallows).
+
+**Key architecture confirmations (tested live, not unit-tested):**
+- Grammar pipeline works end-to-end on Rails 6/7, Django, with 49-144 real models.
+- Registry builds clean at boot (<1s) on all three apps.
+- Fall-through is bulletproof: no user-visible SQL errors across 36 questions.
+- npm schema-only path (no code parsing, no manifest) hits 67% on Chatwoot — schema + data profiling alone are quite powerful.
+- Django prefix stripping alone lifted Saleor from 8% → 58% — proves the registry contract absorbs framework differences cleanly.
+
+**Known unresolved (deferred):**
+- MSP `custom_context` (status=3 = deleted) not parsed by grammar — grammar uses literal `deleted_at IS NULL`, mismatching app convention. 3513 vs 3389 customer count.
+- Bare-int status columns (MSP jobs.status, Chatwoot agent roles) not detectable as enums without Rails `enum` declaration or manual override.
+- Intent extractor occasionally returns `unmatched` for clear COUNT questions ("count of categories", "how many agents") — likely prompt tuning needed.
+- Widget cross-origin fetch: widget loads from npm server but hits relative URL on host page's origin — test had to fall back to direct API calls. Widget config bug, not grammar bug.
+
+**Apps not tested this session:**
+- 2BNCHILL — pre-existing Paranoia `really_delete_all` infinite recursion (SystemStackError). Unrelated to our gem; server couldn't boot.
+- Gitea — docker not running.
+- Redmine — docker not running.
+
+**Next candidates:**
+- V1.1 bug fixes for remaining miss patterns (custom_context parsing, intent extractor prompt tuning)
+- Widget cross-origin config fix so actual widget UI works on benchmark apps
+- More apps (start Gitea/Redmine docker, test)
+
+---
+
 ## 2026-04-24 — Live MSP test via Playwright + V1.1 fixes
 
 **Setup:** Restarted MSP Rails server (Rails 6.0.6.1 / Ruby 2.7.1) with grammar branch. Registry built cleanly — 49 entities. Widget at `localhost:3000` tested via Playwright CDP (closed shadow DOM helper from widget-e2e-testing memory).
