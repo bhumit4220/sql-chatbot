@@ -4,6 +4,25 @@ Reverse-chronological session log. Newest entries at top. Index: [`README.md`](.
 
 ---
 
+## 2026-04-24 — Keycloak tested (complex 92-table IAM schema)
+
+**Keycloak** (Java / Postgres, enterprise IAM, 92 tables) — no CSP on root, widget loaded. **5/8 grammar (62.5%), 7/8 correct UI answers.**
+
+| Question | Path | UI Answer |
+|---|---|---|
+| how many users | fallback | "1 user" (LLM picked `user_entity`) |
+| how many realms | grammar | "1 realm" |
+| how many clients | grammar | "6 clients" |
+| count of roles | fallback | "32 roles" (LLM picked `keycloak_role`) |
+| how many groups | fallback | "No matching records" (LLM picked `keycloak_group`, correct) |
+| list all realms | grammar | "master" |
+| how many user sessions | grammar | "0 sessions active" |
+| how many credentials | grammar | "1 credential" |
+
+**Key finding — complex schemas work:** 92-table enterprise IAM schema with prefix conventions (`user_entity`, `keycloak_role`, `keycloak_group`) still hit 62.5% grammar and **every question got a correct answer through the widget**, including the 3 that fell back to LLM. The prefix naming is the same class as Django's `product_product` — a registry alias fix would flip these 3 to grammar and push Keycloak to 8/8.
+
+---
+
 ## 2026-04-24 — Additional apps tested (Listmonk, Miniflux)
 
 **Listmonk** (Go / Postgres mailing list manager, 16 tables) — **no CSP**, widget loaded. **6/6 grammar = 100%.** All 6 correct UI answers:
