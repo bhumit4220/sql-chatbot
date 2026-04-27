@@ -8,6 +8,7 @@ require "sql_chatbot/services/sql_executor"
 require "sql_chatbot/services/grammar_pipeline"
 require "sql_chatbot/grammar/miss_logger"
 require "sql_chatbot/grammar/sanity_check"
+require "sql_chatbot/grammar/list_renderer"
 
 module SqlChatbot
   module Services
@@ -513,6 +514,18 @@ module SqlChatbot
         # commit to the grammar path by emitting grammar_matched and the SQL event.
         yielder.yield({ type: "grammar_matched", data: {} })
         yielder.yield({ type: "sql", query: validation[:sql], explanation: "grammar" })
+
+        # V1.2 #9: programmatic render for small LIST results so the answer
+        # LLM can't drop or truncate items.
+        list_render = SqlChatbot::Grammar::ListRenderer.try_render(
+          primitive,
+          sanity_entity&.display_label,
+          db_result[:rows]
+        )
+        if list_render[:ok]
+          yielder.yield({ type: "token", content: list_render[:text] })
+          return :handled
+        end
 
         answer_messages = Prompts::Answer.build_messages(
           question: question,
