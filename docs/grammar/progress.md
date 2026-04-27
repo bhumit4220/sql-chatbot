@@ -27,6 +27,28 @@ Both are V1.2 registry-aliasing improvements.
 
 ---
 
+## 2026-04-24 — V1.2 #11 LANDED: data-profiler enums + type-mismatch rejection
+
+**Roadmap P4 #11 complete + bonus type-safety fix.**
+
+**#11 Data-profiler enum promotion:** the existing column profiler already detected discriminator columns with stable distinct values. Now those values flow into `Field.enumValues` for int columns with 2-8 distinct values. Grammar can compare against them like real enum columns.
+
+**Bonus type-safety:** modifier `applyWhere` now rejects type mismatches:
+- `int_col = 'non-numeric-string'` → "type mismatch" error
+- `bool_col = 'wrong-string'` → "type mismatch" error
+- → grammar falls through cleanly to LLM (which has full schema context).
+
+**Live-verified Chatwoot:** "how many open conversations"
+- Before: grammar built `WHERE status='open'` → PG raised "invalid input syntax for type integer" → user saw error
+- After: grammar rejects (type mismatch) → falls through → LLM emits `WHERE status = 1` via Rails custom_context → user sees correct count
+
+**Tests:** 759 still passing (no test changes needed; behavior is additive).
+**Commit:** `a67b5ef`
+
+**8 V1.2 issues shipped this session.** Continuing roadmap.
+
+---
+
 ## 2026-04-24 — V1.2 #8 LANDED: graceful LLM-fallback on SQL errors
 
 **Roadmap P3 #8 complete.** No more raw PG errors to users.

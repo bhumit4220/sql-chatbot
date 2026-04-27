@@ -84,11 +84,12 @@ Every issue surfaced during the 9-app DB-verified test sweep, paired with a conc
 - **Solution:** Parse `custom_context` for patterns like `{table}.{column} = {value}` and `<column> means <semantic>`. Feed parsed rules into registry as additional aliases / scopes.
 - **Effort:** 1.5-2 hours.
 
-### 11. Bare-int columns not detected as enums (Chatwoot agent roles, MSP coupon_type)
+### 11. Bare-int columns not detected as enums (Chatwoot agent roles, MSP coupon_type) — ✅ DONE 2026-04-24
 
-- **Problem:** Magic-int columns aren't declared as Rails enums; data profiler runs but its findings don't reach `Field.enumValues`.
-- **Solution:** Wire data profiler output into registry: for any int column with ≤8 distinct values across ≤50% of rows, register the values as `enumValues`.
-- **Effort:** 1 hour.
+- **Solution shipped:** Data profiler's value→count map now flows into `StructuredColumn.enumValues` for int columns with 2-8 distinct values. Schema-only registry promotes these to `Field.enumValues` automatically.
+- **Bonus type-safety:** modifier `applyWhere` now rejects `int = 'string'` and `bool = 'wrongstring'` patterns with a clear "type mismatch" error → grammar falls through cleanly to LLM, which has full schema context and emits the right SQL.
+- **Live-verified on Chatwoot:** "how many open conversations" — grammar correctly rejects `WHERE status='open'` (type mismatch on int column), LLM fallback emits `WHERE status = 1` via custom_context. Previously this rendered raw PG error.
+- **Commit:** `a67b5ef`.
 
 ---
 
