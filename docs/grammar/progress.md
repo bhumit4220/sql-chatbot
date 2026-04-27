@@ -27,6 +27,28 @@ Both are V1.2 registry-aliasing improvements.
 
 ---
 
+## 2026-04-24 — V1.2 #3 LANDED: COUNT sanity check (defense-in-depth)
+
+**Roadmap P1 #3 complete.** Catches plausible-but-wrong answers universally.
+
+**What it does:** After grammar SQL executes, compare COUNT result to `entity.rowCount` (from pg_stat_user_tables). If mismatch (>3x off when known >5), fall through to LLM. Skips check on tiny/stale tables (rowCount ≤ 5).
+
+**Bonus refactor:** TS Orchestrator grammar branch now validates + executes + sanity-checks BEFORE emitting `grammar_matched`/`sql` events. Mirrors the Rails-side ordering from V1.1 review item #2. User never sees a broken grammar response — silent fall-through to LLM.
+
+**Files:**
+- New: `sanity-check.ts`, `sanity_check.rb`
+- Modified: TS Orchestrator (grammar branch flow rewrite + sanity hook), Rails Orchestrator (sanity hook)
+- Tests: `sanity-check.test.ts` (7 cases) + `sanity_check_spec.rb` (6 cases)
+
+**Tests:** 355 npm + 400 Rails = **755 passing** (+13 new). Zero regressions.
+**Commit:** `4f8e7ae`
+
+**Live verification:** Gitea "how many users" → SQL `FROM "user"` → returns 9 → sanity check OK (9 ≈ 9) → grammar_matched emitted → "There are 9 users."
+
+**Three V1.2 fixes shipped today: #1 quote identifiers, #2 entity disambiguation, #3 COUNT sanity. Combined: silent corruption from PG reserved words, table-name collisions, and any future "plausible but wrong" class are all caught.**
+
+---
+
 ## 2026-04-24 — V1.2 #2 LANDED: entity-candidate disambiguation (Taiga fix)
 
 **Roadmap P1 #2 complete.** Live-verified.

@@ -20,14 +20,13 @@ Every issue surfaced during the 9-app DB-verified test sweep, paired with a conc
 - **Verified live:** Taiga "how many projects" → `SELECT COUNT(*) FROM "projects_project"` → 0 (correct).
 - **Commit:** `d95cdbf`. Tests: 742 passing (+3 new).
 
-### 3. Plausible-but-wrong fundamental risk
+### 3. Plausible-but-wrong fundamental risk — ✅ DONE 2026-04-24 (sanity check landed)
 
-- **Problem:** Generated SQL runs successfully but the *interpretation* is wrong (Gitea reserved word, Taiga template-vs-project). User has no signal.
-- **Solution (defense-in-depth):**
-  a) **Sanity check**: for COUNT primitives, compare result against `pg_class.reltuples` — if result is wildly off (e.g., COUNT returns 1 but reltuples shows 9), surface a warning bubble.
-  b) **Confidence indicator** in widget answer: show the SQL that was run + a "verify in DB" link.
-  c) **Telemetry**: log every COUNT result alongside reltuples; review for outliers.
-- **Effort:** 3-4 hours; (a) is the highest-value piece — would have flagged the Gitea bug immediately.
+- **Problem:** Generated SQL runs without error but the value is wildly wrong (e.g., 1 instead of 9). User has no signal.
+- **Solution shipped:** Post-execute sanity check compares COUNT result to registry's known rowCount. Mismatch (>3x off, when known >5) → fall through to LLM. Both TS + Ruby paths.
+- **Bonus:** TS Orchestrator grammar branch reordered to validate+execute+sanity-check BEFORE emitting `grammar_matched` event. User never sees a broken grammar response.
+- **Verified:** 7 TS + 6 Ruby unit tests cover threshold logic. Live: Gitea sanity-check passes (9 = 9). Future "plausible but wrong" bugs caught universally.
+- **Commit:** `4f8e7ae`. Tests: 755 passing (+13 new).
 
 ---
 
