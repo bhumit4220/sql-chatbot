@@ -102,79 +102,20 @@ export function buildSchemaOnlyRegistry(schema: SchemaServiceLike): Registry {
     }
   }
 
-  // Detect common prefix shared across 5+ entities (e.g. Keycloak's
-  // `keycloak_role`, `keycloak_group`, `keycloak_attribute` ...). Tables that
-  // start with this prefix get a stripped alias so questions about "role" /
-  // "group" map to the right entity even when the canonical name has the prefix.
-  const prefixCounts = new Map<string, number>();
+  // Build aliases via a declarative rule registry. Each AliasRule is a pure
+  // function that, given an entity name and shared context (e.g., common
+  // prefixes detected across the registry), returns the alternative forms
+  // to register as aliases pointing back to the canonical name.
+  //
+  // To support a new naming convention, push a new rule into ALIAS_RULES.
+  // No edits to this loop or the alias-building function are needed.
+  const ctx: AliasContext = {
+    entityNames: new Set(Object.keys(r.entities)),
+    commonPrefixes: detectCommonPrefixes(Object.keys(r.entities)),
+  };
+
   for (const name of Object.keys(r.entities)) {
-    const idx = name.indexOf('_');
-    if (idx <= 0) continue;
-    const prefix = name.slice(0, idx);
-    if (prefix.length < 3) continue;
-    prefixCounts.set(prefix, (prefixCounts.get(prefix) ?? 0) + 1);
-  }
-  const commonPrefixes = new Set<string>();
-  for (const [prefix, count] of prefixCounts) {
-    if (count >= 5) commonPrefixes.add(prefix);
-  }
-
-  // Build aliases for common question phrasings.
-  // Rules (skip when alias clashes with a canonical entity name or another alias):
-  //   plural form       → canonical    ("products" → "product_product" if entity has it)
-  //   multi-word spaces → canonical    ("service areas" → "service_area")
-  //   Django app_model  → model        ("product_product" exposes alias "product")
-  //   Django app_model  → model plural ("product_product" exposes alias "products")
-  for (const name of Object.keys(r.entities)) {
-    const altForms: string[] = [];
-    const spaced = name.replace(/_/g, ' ');
-    altForms.push(spaced);
-    altForms.push(pluralizeSimple(spaced));
-    altForms.push(pluralizeSimple(name));
-
-    // Django pattern: <app>_<model> where app and model refer to the same thing.
-    // Variants:
-    //   product_product (prefix === suffix)              → expose "product", "products"
-    //   userstories_userstory (singularize(prefix) === suffix) → expose "userstory", "userstories"
-    //   account_user (parts[0] === suffix)               → expose "user", "users"
-    const parts = name.split('_');
-    if (parts.length >= 2) {
-      const last = parts[parts.length - 1];
-      const prefix = parts.slice(0, -1).join('_');
-      const singularPrefix = singularize(prefix);
-      if (prefix === last) {
-        altForms.push(last);
-        altForms.push(pluralizeSimple(last));
-        altForms.push(last.replace(/_/g, ' '));
-      } else if (singularPrefix === last) {
-        // userstories_userstory → expose "userstory" and "userstories"
-        altForms.push(last);
-        altForms.push(pluralizeSimple(last));
-        altForms.push(prefix); // expose the plural app form too
-      } else if (parts[0] === last) {
-        altForms.push(last);
-        altForms.push(pluralizeSimple(last));
-      }
-
-      // TypeORM convention: `<model>_entity` (workflow_entity, tag_entity).
-      // Strip the suffix and expose the bare model name + its plural.
-      if (last === 'entity' && parts.length >= 2) {
-        const stem = parts.slice(0, -1).join('_');
-        altForms.push(stem);
-        altForms.push(pluralizeSimple(stem));
-      }
-
-      // Common-prefix convention: e.g. Keycloak's `keycloak_role`.
-      // If 5+ entities share the same first segment, strip it and expose
-      // the rest as an alias.
-      const firstSeg = parts[0];
-      if (commonPrefixes.has(firstSeg) && parts.length >= 2) {
-        const stripped = parts.slice(1).join('_');
-        altForms.push(stripped);
-        altForms.push(pluralizeSimple(stripped));
-      }
-    }
-
+    const altForms = collectAlternativeForms(name, ctx);
     for (const alt of altForms) {
       if (!alt || alt === name) continue;
       if (r.entities[alt]) continue;      // don't shadow real entity
@@ -184,6 +125,96 @@ export function buildSchemaOnlyRegistry(schema: SchemaServiceLike): Registry {
   }
 
   return r;
+}
+
+// ---------------------------------------------------------------------------
+// Alias inference engine
+// ---------------------------------------------------------------------------
+// Each rule is independent and side-effect-free. The order of rules matters
+// only for ties (first-come-first-served when alias keys collide); a rule
+// returning more specific forms first is preferred.
+
+interface AliasContext {
+  entityNames: Set<string>;
+  commonPrefixes: Set<string>;
+}
+
+type AliasRule = (name: string, parts: string[], ctx: AliasContext) => string[];
+
+// Always emit the spaced and plural forms of every name.
+const baseFormsRule: AliasRule = (name) => [
+  name.replace(/_/g, ' '),
+  pluralizeSimple(name.replace(/_/g, ' ')),
+  pluralizeSimple(name),
+];
+
+// Django/duplicated-prefix variants. Three sub-cases share one rule.
+const duplicatedSegmentRule: AliasRule = (_name, parts) => {
+  if (parts.length < 2) return [];
+  const last = parts[parts.length - 1];
+  const prefix = parts.slice(0, -1).join('_');
+  const out: string[] = [];
+
+  if (prefix === last) {
+    // product_product → product, products, "product"
+    out.push(last, pluralizeSimple(last), last.replace(/_/g, ' '));
+  } else if (singularize(prefix) === last) {
+    // userstories_userstory → userstory, userstories
+    out.push(last, pluralizeSimple(last), prefix);
+  } else if (parts[0] === last) {
+    // account_user → user, users
+    out.push(last, pluralizeSimple(last));
+  }
+  return out;
+};
+
+// TypeORM-style `<model>_entity` suffix.
+const entitySuffixRule: AliasRule = (_name, parts) => {
+  if (parts.length < 2) return [];
+  if (parts[parts.length - 1] !== 'entity') return [];
+  const stem = parts.slice(0, -1).join('_');
+  return [stem, pluralizeSimple(stem)];
+};
+
+// Common-segment prefix shared by 5+ entities (Keycloak `keycloak_*`).
+const commonPrefixRule: AliasRule = (_name, parts, ctx) => {
+  if (parts.length < 2) return [];
+  const firstSeg = parts[0];
+  if (!ctx.commonPrefixes.has(firstSeg)) return [];
+  const stripped = parts.slice(1).join('_');
+  return [stripped, pluralizeSimple(stripped)];
+};
+
+const ALIAS_RULES: AliasRule[] = [
+  baseFormsRule,
+  duplicatedSegmentRule,
+  entitySuffixRule,
+  commonPrefixRule,
+];
+
+function collectAlternativeForms(name: string, ctx: AliasContext): string[] {
+  const parts = name.split('_');
+  const out: string[] = [];
+  for (const rule of ALIAS_RULES) {
+    out.push(...rule(name, parts, ctx));
+  }
+  return out;
+}
+
+function detectCommonPrefixes(entityNames: string[]): Set<string> {
+  const counts = new Map<string, number>();
+  for (const name of entityNames) {
+    const idx = name.indexOf('_');
+    if (idx <= 0) continue;
+    const prefix = name.slice(0, idx);
+    if (prefix.length < 3) continue;
+    counts.set(prefix, (counts.get(prefix) ?? 0) + 1);
+  }
+  const result = new Set<string>();
+  for (const [prefix, count] of counts) {
+    if (count >= 5) result.add(prefix);
+  }
+  return result;
 }
 
 function pluralizeSimple(word: string): string {
