@@ -40,4 +40,24 @@ RSpec.describe SqlChatbot::Grammar::EntityCandidates do
     candidates = described_class.select(question: "hello there", registry: registry, top_n: 3)
     expect(candidates.first.name).to eq("audit_log")
   end
+
+  it "Taiga regression: prefers projects_project over projects_projecttemplate" do
+    entities = {
+      "projects_project"          => SqlChatbot::Grammar::Entity.new(name: "projects_project",          table: "projects_project",          row_count: 0),
+      "projects_projecttemplate"  => SqlChatbot::Grammar::Entity.new(name: "projects_projecttemplate",  table: "projects_projecttemplate",  row_count: 2),
+    }
+    r = SqlChatbot::Grammar::Registry.new(framework: "django", entities: entities, aliases: {})
+    candidates = described_class.select(question: "how many projects", registry: r, top_n: 5)
+    expect(candidates.first.name).to eq("projects_project")
+  end
+
+  it "token match: question 'users' matches users_user entity" do
+    entities = {
+      "users_user"      => SqlChatbot::Grammar::Entity.new(name: "users_user",      table: "users_user",      row_count: 4),
+      "auth_permission" => SqlChatbot::Grammar::Entity.new(name: "auth_permission", table: "auth_permission", row_count: 100),
+    }
+    r = SqlChatbot::Grammar::Registry.new(framework: "django", entities: entities, aliases: {})
+    candidates = described_class.select(question: "how many users", registry: r, top_n: 5)
+    expect(candidates.first.name).to eq("users_user")
+  end
 end

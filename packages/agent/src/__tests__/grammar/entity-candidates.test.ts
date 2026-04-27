@@ -36,4 +36,32 @@ describe('selectEntityCandidates', () => {
     const c = selectEntityCandidates('hello there', registry, 3);
     expect(c[0].name).toBe('audit_log');
   });
+
+  it('Taiga regression: prefers projects_project over projects_projecttemplate', () => {
+    const taigaRegistry: Registry = {
+      version: 1, generatedAt: '', framework: 'django', aliases: {},
+      entities: {
+        // Real data table — 0 rows in fresh setup
+        projects_project: { name: 'projects_project', table: 'projects_project', displayLabel: 'Project', rowCount: 0 } as any,
+        // Lookup/template table — has 2 seed rows
+        projects_projecttemplate: { name: 'projects_projecttemplate', table: 'projects_projecttemplate', displayLabel: 'ProjectTemplate', rowCount: 2 } as any,
+      },
+    };
+    const c = selectEntityCandidates('how many projects', taigaRegistry, 5);
+    // The simpler-named entity (fewer name segments after token match) wins,
+    // even though the template table has more rows.
+    expect(c[0].name).toBe('projects_project');
+  });
+
+  it('token match: question "users" matches users_user entity', () => {
+    const r: Registry = {
+      version: 1, generatedAt: '', framework: 'django', aliases: {},
+      entities: {
+        users_user: { name: 'users_user', table: 'users_user', displayLabel: 'User', rowCount: 4 } as any,
+        auth_permission: { name: 'auth_permission', table: 'auth_permission', displayLabel: 'Permission', rowCount: 100 } as any,
+      },
+    };
+    const c = selectEntityCandidates('how many users', r, 5);
+    expect(c[0].name).toBe('users_user');
+  });
 });
