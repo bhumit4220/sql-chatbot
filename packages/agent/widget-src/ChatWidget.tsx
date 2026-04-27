@@ -3,6 +3,9 @@ import { useState, useRef, useEffect } from 'react'
 interface Props {
   baseUrl: string
   position: string
+  /** Optional URL (relative to host page) where a build-time chatbot manifest
+   *  is served. When unset, widget skips manifest fetch entirely (no 404). */
+  manifestUrl?: string
 }
 
 interface Message {
@@ -111,7 +114,7 @@ function renderMarkdown(text: string): string {
   return result.join('\n').replace(/(?<!\>)\n(?!\<)/g, '<br/>')
 }
 
-export function ChatWidget({ baseUrl, position }: Props) {
+export function ChatWidget({ baseUrl, position, manifestUrl }: Props) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -126,28 +129,30 @@ export function ChatWidget({ baseUrl, position }: Props) {
 
   useEffect(scrollToBottom, [messages])
 
-  // Fetch and send manifest from frontend's origin on mount
+  // Manifest fetch is opt-in via the script tag's data-manifest-url attribute.
+  // Skipping when unset prevents 404 noise on apps that don't ship a manifest.
   useEffect(() => {
-    // Try to fetch build-time manifest from the frontend's own origin
-    fetch(`${window.location.origin}/chatbot-manifest.json`)
+    if (!manifestUrl) return
+    const url = manifestUrl.startsWith('http')
+      ? manifestUrl
+      : `${window.location.origin}${manifestUrl.startsWith('/') ? '' : '/'}${manifestUrl}`
+    fetch(url)
       .then(r => r.ok ? r.json() : null)
       .catch(() => null)
       .then(manifest => {
-        if (manifest) {
-          manifestRef.current = manifest
-          // Send manifest to backend once
-          fetch(`${baseUrl}/api/manifest`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ manifest }),
-          }).then(() => {
-            manifestSentRef.current = true
-          }).catch(() => {
-            // Silent failure — manifest is a nice-to-have
-          })
-        }
+        if (!manifest) return
+        manifestRef.current = manifest
+        fetch(`${baseUrl}/api/manifest`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ manifest }),
+        }).then(() => {
+          manifestSentRef.current = true
+        }).catch(() => {
+          // Silent failure — manifest is a nice-to-have
+        })
       })
-  }, [baseUrl])
+  }, [baseUrl, manifestUrl])
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return

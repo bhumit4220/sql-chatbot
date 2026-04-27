@@ -21,6 +21,13 @@ import styles from './styles.css?inline'
 
   const position = script.getAttribute('data-position') || 'bottom-right'
 
+  // Manifest URL is opt-in. If the host app ships a build-time chatbot manifest
+  // (route map, code index for SPA route detection), set
+  // `data-manifest-url="/chatbot-manifest.json"` on the script tag.
+  // Default is empty → widget skips the manifest fetch entirely so apps without
+  // a manifest don't see noisy 404s in the browser console.
+  const manifestUrl = script.getAttribute('data-manifest-url') || ''
+
   // Create Shadow DOM host
   const host = document.createElement('div')
   host.id = 'sql-chatbot-host'
@@ -38,5 +45,5 @@ import styles from './styles.css?inline'
   shadow.appendChild(container)
 
   const root = createRoot(container)
-  root.render(createElement(ChatWidget, { baseUrl, position }))
+  root.render(createElement(ChatWidget, { baseUrl, position, manifestUrl }))
 })()
