@@ -92,21 +92,24 @@ RSpec.describe SqlChatbot::Services::Orchestrator do
         expect(events.find { |e| e[:type] == "error" }[:message]).to include("SQL validation failed")
       end
 
-      it "emits error when SQL execution raises" do
+      it "renders graceful message when SQL execution raises (no raw PG error to user)" do
         allow(llm_client).to receive(:call).and_return(
           '{"type":"data","confidence":0.9,"searchTerms":[]}',
-          '{"sql":"SELECT COUNT(*) FROM nonexistent","explanation":"count"}'
+          '{"sql":"SELECT COUNT(*) FROM nonexistent","explanation":"count"}',
+          '{"sql":"","explanation":""}' # retry returns nothing valid
         )
         allow(SqlChatbot::Services::SqlExecutor).to receive(:validate_sql)
           .and_return({ valid: true, sql: "SELECT COUNT(*) FROM nonexistent" })
         allow(SqlChatbot::Services::SqlExecutor).to receive(:execute_sql)
-          .and_raise(StandardError.new("relation \"nonexistent\" does not exist"))
+          .and_raise(ActiveRecord::StatementInvalid.new("relation \"nonexistent\" does not exist"))
 
         events = orchestrator.handle_question(question: "count nonexistent").to_a
         types = events.map { |e| e[:type] }
 
-        expect(types).to include("error")
-        expect(events.find { |e| e[:type] == "error" }[:message]).to include("Something went wrong")
+        # No raw error event — graceful token instead (V1.2 #8)
+        expect(types).not_to include("error")
+        token_text = events.select { |e| e[:type] == "token" }.map { |e| e[:content] }.join
+        expect(token_text).to match(/couldn't answer|rephrase/i)
       end
     end
 
@@ -307,7 +310,7 @@ RSpec.describe SqlChatbot::Services::Orchestrator do
         expect(llm_client).to have_received(:call).exactly(3).times
       end
 
-      it "shows error when both original and retry fail" do
+      it "renders graceful message when both original and retry fail (V1.2 #8)" do
         error = statement_invalid_class.new("PG::UndefinedColumn: column bad does not exist")
         allow(llm_client).to receive(:call).and_return(
           '{"type":"data","confidence":0.9,"searchTerms":["users"]}',
@@ -323,7 +326,10 @@ RSpec.describe SqlChatbot::Services::Orchestrator do
         events = orchestrator.handle_question(question: "show bad data").to_a
         error_events = events.select { |e| e[:type] == "error" }
 
-        expect(error_events).not_to be_empty
+        # No raw error to user — graceful token instead.
+        expect(error_events).to be_empty
+        token_text = events.select { |e| e[:type] == "token" }.map { |e| e[:content] }.join
+        expect(token_text).to match(/couldn't answer|rephrase/i)
       end
     end
 

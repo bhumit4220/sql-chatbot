@@ -140,47 +140,57 @@ module SqlChatbot
         begin
           result = SqlExecutor.execute_sql(validation[:sql])
         rescue ActiveRecord::StatementInvalid => e
-          # Strategy 1: Try programmatic column fix (fast, no LLM call)
           log_error(e)
-          fixed_sql = try_fix_column(e.message, validation[:sql], selected_schema)
-          if fixed_sql
-            begin
-              fixed_validation = SqlExecutor.validate_sql(fixed_sql)
-              if fixed_validation[:valid]
-                yielder.yield({ type: "sql", query: fixed_sql, explanation: "Auto-corrected column name" })
-                result = SqlExecutor.execute_sql(fixed_validation[:sql])
+          # Strategy 1: programmatic column fix (only for column errors)
+          if column_error?(e.message)
+            fixed_sql = try_fix_column(e.message, validation[:sql], selected_schema)
+            if fixed_sql
+              begin
+                fixed_validation = SqlExecutor.validate_sql(fixed_sql)
+                if fixed_validation[:valid]
+                  yielder.yield({ type: "sql", query: fixed_sql, explanation: "Auto-corrected column name" })
+                  result = SqlExecutor.execute_sql(fixed_validation[:sql])
+                end
+              rescue => _fix_error
+                # fall through to LLM retry
               end
-            rescue => _fix_error
-              # Fall through to LLM retry
             end
           end
 
-          # Strategy 2: Ask LLM to fix (slower, more flexible)
+          # Strategy 2: LLM retry — V1.2 #8 extends to ALL PG errors, not just column ones.
           unless defined?(result) && result
-            error_hint = build_column_hint(e.message, selected_schema)
+            error_hint = column_error?(e.message) ? build_column_hint(e.message, selected_schema) : ""
             retry_messages = gen_messages + [
               { role: "assistant", content: raw_sql },
-              { role: "user", content: "The SQL query failed with this error:\n#{e.message}\n\n#{error_hint}Fix the query using ONLY columns from the schema. Keep all SELECT columns — do not drop columns, use the correct names." }
+              { role: "user", content: "The SQL query failed with this error:\n#{e.message}\n\n#{error_hint}Please fix the SQL." }
             ]
             begin
               retry_sql = @llm.call(retry_messages, json_mode: true)
               retry_parsed = parse_sql_generation(retry_sql)
-              retry_validation = SqlExecutor.validate_sql(retry_parsed[:sql])
-              if retry_validation[:valid] && !retry_parsed[:sql].empty?
-                yielder.yield({ type: "sql", query: retry_parsed[:sql], explanation: "Corrected: #{retry_parsed[:explanation]}" })
-                result = SqlExecutor.execute_sql(retry_validation[:sql])
-              else
-                raise e
+              if !retry_parsed[:sql].empty?
+                retry_validation = SqlExecutor.validate_sql(retry_parsed[:sql])
+                if retry_validation[:valid]
+                  yielder.yield({ type: "sql", query: retry_parsed[:sql], explanation: "Corrected: #{retry_parsed[:explanation]}" })
+                  begin
+                    result = SqlExecutor.execute_sql(retry_validation[:sql])
+                  rescue => _retry_exec_err
+                    # retry also errored — fall through to graceful message
+                  end
+                end
               end
-            rescue => retry_error
-              log_error(retry_error)
-              yielder.yield({ type: "error", message: friendly_error_message(e) })
-              return
+            rescue => _llm_retry_err
+              # LLM call failed — fall through
             end
+          end
+
+          # Strategy 3: Graceful message (V1.2 #8). Never render raw PG to user.
+          unless defined?(result) && result
+            yielder.yield({ type: "token", content: "I couldn't answer that one — could you rephrase or be more specific?" })
+            return
           end
         rescue => e
           log_error(e)
-          yielder.yield({ type: "error", message: friendly_error_message(e) })
+          yielder.yield({ type: "token", content: "I couldn't answer that one — could you rephrase or be more specific?" })
           return
         end
 
@@ -321,6 +331,13 @@ module SqlChatbot
         else
           "Something went wrong while processing your question. Please try again."
         end
+      end
+
+      # Returns true when the PG error is about a missing/wrong column.
+      # We only run the programmatic column-fix strategy on these.
+      def column_error?(error_message)
+        msg = error_message.to_s
+        msg.include?("UndefinedColumn") || msg.match?(/column .* does not exist/i)
       end
 
       # Attempt to fix an UndefinedColumn error by finding the correct column name.

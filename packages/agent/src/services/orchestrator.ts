@@ -313,60 +313,59 @@ export class Orchestrator {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
 
-      // Only retry for column-reference errors
-      if (!this.isColumnError(message)) {
-        yield { type: 'error', message };
-        return;
-      }
-
       // --- Strategy 1: Programmatic column fix (no LLM) ---
-      const fixedSql = this.tryFixColumn(message, activeSql, schemaSummary);
-      if (fixedSql) {
-        const fixedValidation = validateSql(fixedSql);
-        if (fixedValidation.valid) {
-          activeSql = fixedValidation.sql!;
-          yield { type: 'sql', query: activeSql, explanation: '' };
-          try {
-            sqlResult = await executeSql(this.databaseUrl, activeSql);
-          } catch (retryErr) {
-            const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
-            yield { type: 'error', message: retryMessage };
-            return;
+      // Only applies when error is a column-reference error.
+      if (this.isColumnError(message)) {
+        const fixedSql = this.tryFixColumn(message, activeSql, schemaSummary);
+        if (fixedSql) {
+          const fixedValidation = validateSql(fixedSql);
+          if (fixedValidation.valid) {
+            activeSql = fixedValidation.sql!;
+            yield { type: 'sql', query: activeSql, explanation: '' };
+            try {
+              sqlResult = await executeSql(this.databaseUrl, activeSql);
+            } catch (_retryErr) {
+              // fall through to LLM retry
+            }
           }
-        } else {
-          // Fixed SQL still didn't validate — fall through to LLM retry
         }
       }
 
-      // --- Strategy 2: LLM retry ---
+      // --- Strategy 2: LLM retry (extended in V1.2 #8 to cover any PG error) ---
       if (!sqlResult) {
-        const hint = this.buildColumnHint(message, activeSql, schemaSummary);
-        // Append error + hint as a new user turn so the LLM understands what went wrong
+        const hint = this.isColumnError(message)
+          ? this.buildColumnHint(message, activeSql, schemaSummary)
+          : '';
         const retryMessages = [
           ...sqlMessages,
           { role: 'assistant' as const, content: sqlRaw },
           { role: 'user' as const, content: `The query failed with: ${message}\n${hint}\nPlease fix the SQL query.` },
         ];
-        const retryRaw = await callLLM(retryMessages, { jsonMode: true });
-        const retryParsed = this.parseSqlGeneration(retryRaw);
-        if (!retryParsed.sql) {
-          yield { type: 'error', message };
-          return;
-        }
-        const retryValidation = validateSql(retryParsed.sql);
-        if (!retryValidation.valid) {
-          yield { type: 'error', message: retryValidation.reason! };
-          return;
-        }
-        activeSql = retryValidation.sql!;
-        yield { type: 'sql', query: activeSql, explanation: retryParsed.explanation };
         try {
-          sqlResult = await executeSql(this.databaseUrl, activeSql);
-        } catch (retryErr) {
-          const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
-          yield { type: 'error', message: retryMessage };
-          return;
+          const retryRaw = await callLLM(retryMessages, { jsonMode: true });
+          const retryParsed = this.parseSqlGeneration(retryRaw);
+          if (retryParsed.sql) {
+            const retryValidation = validateSql(retryParsed.sql);
+            if (retryValidation.valid) {
+              activeSql = retryValidation.sql!;
+              yield { type: 'sql', query: activeSql, explanation: retryParsed.explanation };
+              try {
+                sqlResult = await executeSql(this.databaseUrl, activeSql);
+              } catch (_retryExecErr) {
+                // retry also failed — fall through to graceful message
+              }
+            }
+          }
+        } catch (_llmRetryErr) {
+          // LLM call itself failed — fall through
         }
+      }
+
+      // --- Strategy 3: Graceful fallback message (V1.2 #8) ---
+      // After retry attempts exhaust, never render the raw PG error to the user.
+      if (!sqlResult) {
+        yield { type: 'token', content: "I couldn't answer that one — could you rephrase or be more specific?" };
+        return;
       }
     }
 

@@ -330,9 +330,10 @@ describe('Orchestrator', () => {
     expect(mockStreamLLM).not.toHaveBeenCalled();
   });
 
-  // 7. SQL execution error
-  it('7. handles SQL execution error', async () => {
+  // 7. SQL execution error → V1.2 #8 graceful fallback (no raw PG error to user)
+  it('7. handles SQL execution error with graceful message after retry exhausts', async () => {
     mockClassification('data');
+    // First LLM call: classify; second: SQL gen; third: retry SQL gen
     mockSqlGeneration('SELECT * FROM nonexistent');
     mockValidateSql.mockReturnValue({ valid: true, sql: 'SELECT * FROM nonexistent' });
     mockExecuteSql.mockRejectedValue(new Error('relation "nonexistent" does not exist'));
@@ -342,13 +343,13 @@ describe('Orchestrator', () => {
 
     const types = events.map((e) => e.type);
     expect(types).toContain('sql');
-    expect(types).toContain('error');
     expect(types).toContain('done');
+    // No 'error' event — graceful token instead
+    expect(types).not.toContain('error');
+    const tokens = events.filter((e) => e.type === 'token').map((e) => e.content as string).join('');
+    expect(tokens).toMatch(/couldn't answer|rephrase/);
 
-    const errorEvent = events.find((e) => e.type === 'error');
-    expect(errorEvent?.message).toContain('nonexistent');
-
-    // Should NOT have called streamLLM
+    // Should NOT have called streamLLM (graceful branch ends without LLM stream)
     expect(mockStreamLLM).not.toHaveBeenCalled();
   });
 
@@ -630,8 +631,8 @@ describe('Orchestrator', () => {
     expect(types).toContain('done');
   });
 
-  // 15. Non-column error: no retry, returns error immediately
-  it('15. does not retry on non-column errors (relation does not exist)', async () => {
+  // 15. Non-column error → V1.2 #8: still tries LLM retry once, then graceful message.
+  it('15. on non-column errors, retries once via LLM then renders graceful message', async () => {
     mockClassification('data');
     mockSqlGeneration('SELECT * FROM nonexistent_table');
     mockValidateSql.mockReturnValue({ valid: true, sql: 'SELECT * FROM nonexistent_table' });
@@ -641,18 +642,13 @@ describe('Orchestrator', () => {
     const events = await collectEvents(orchestrator.handleQuestion(input));
 
     const types = events.map((e) => e.type);
-
-    // Only one sql event
-    const sqlEvents = events.filter((e) => e.type === 'sql');
-    expect(sqlEvents.length).toBe(1);
-
-    // Error returned immediately
-    expect(types).toContain('error');
-    const errorEvent = events.find((e) => e.type === 'error');
-    expect(errorEvent?.message).toContain('nonexistent_table');
-
-    // executeSql called only once
-    expect(mockExecuteSql).toHaveBeenCalledTimes(1);
+    // No raw error to user
+    expect(types).not.toContain('error');
+    // Graceful message instead
+    const tokens = events.filter((e) => e.type === 'token').map((e) => e.content as string).join('');
+    expect(tokens).toMatch(/couldn't answer|rephrase/);
+    // executeSql called at least once (original); retry may also fire
+    expect(mockExecuteSql).toHaveBeenCalled();
   });
 
   describe('manifest support', () => {
