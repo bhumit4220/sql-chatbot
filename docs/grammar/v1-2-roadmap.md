@@ -6,12 +6,12 @@ Every issue surfaced during the 9-app DB-verified test sweep, paired with a conc
 
 ## P1 — Confidently wrong answers (highest priority)
 
-### 1. PG reserved-word collision (Gitea `user` table → "1" vs real 9)
+### 1. PG reserved-word collision (Gitea `user` table → "1" vs real 9) — ✅ DONE 2026-04-24
 
-- **Problem:** Compiler emits unquoted identifiers. `SELECT COUNT(*) FROM user` is parsed as `SELECT COUNT(*) FROM CURRENT_USER` → silently returns 1 row.
-- **Solution:** Always double-quote identifiers in `template-compiler.ts` + `template_compiler.rb` + `primitives` + `modifiers`. `FROM "${entity.table}"`, columns as `"${entity.table}"."${col}"`.
-- **Effort:** 30 min code + regression test that asserts `SELECT COUNT(*) FROM "user"` returns >1 on a Gitea fixture.
-- **Why it works:** Quoted identifiers in PG always refer to the literal name and never collide with reserved words. Universal fix.
+- **Problem:** Compiler emitted unquoted identifiers. `SELECT COUNT(*) FROM user` was parsed as `SELECT COUNT(*) FROM CURRENT_USER` → silently returned 1 row.
+- **Solution shipped:** Added `q(name)` and `qc(table, col)` helpers in primitives.ts + primitives.rb. All primitives, modifiers, JOIN clauses, soft-delete injection now emit `"table"."col"`. Both regression tests added: TS + Ruby assert `SELECT COUNT(*) FROM "user"` form.
+- **Verified live:** Gitea now returns `SELECT COUNT(*) FROM "user"` → 9 users (correct). Tests: 347 npm + 392 Rails = 739 passing.
+- **Commit:** `182626c`
 
 ### 2. Table-name collision / disambiguation (Taiga `projects_projecttemplate` answered for "projects" → 2 vs real 0)
 

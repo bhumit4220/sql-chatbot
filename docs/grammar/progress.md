@@ -27,6 +27,32 @@ Both are V1.2 registry-aliasing improvements.
 
 ---
 
+## 2026-04-24 — V1.2 #1 LANDED: quote SQL identifiers (Gitea fix)
+
+**Roadmap item P1 #1 complete.** Live-verified end-to-end.
+
+**Before:** `SELECT COUNT(*) FROM user` → silently returned 1 (PG resolved as CURRENT_USER function)
+**After:**  `SELECT COUNT(*) FROM "user"` → returns 9 (correct)
+
+**Files touched:**
+- TS: `primitives.ts` (added `q()` + `qc()` helpers, all primitive templates use them), `modifiers.ts` (where/time/join/group_by/order_by use qc), `template-compiler.ts` (soft-delete uses quoted ref)
+- Ruby: `primitives.rb`, `modifiers.rb`, `template_compiler.rb` — same pattern
+- Tests: 6 test files updated to assert quoted form, 2 new regression tests for `user` reserved-word table
+
+**Tests:** 347 npm + 392 Rails = **739 passing** (was 736 + 3 new). Zero regressions.
+**Commit:** `182626c`
+
+**Live verification:** Hit Gitea chatbot API directly with "how many users":
+```
+data: {"type":"sql","query":"SELECT COUNT(*) FROM \"user\""}
+data: {"type":"token","content":"There"} ... "9" ... "users"
+```
+Confirmed 9 users (matches `SELECT COUNT(*) FROM "user"` direct query).
+
+**Now working on V1.2 #2: entity-candidate disambiguation** (Taiga `projects_project` vs `projects_projecttemplate`).
+
+---
+
 ## 2026-04-24 — Keycloak tested (complex 92-table IAM schema)
 
 **Keycloak** (Java / Postgres, enterprise IAM, 92 tables) — no CSP on root, widget loaded. **5/8 grammar (62.5%), 7/8 correct UI answers.**
