@@ -13,11 +13,12 @@ Every issue surfaced during the 9-app DB-verified test sweep, paired with a conc
 - **Verified live:** Gitea now returns `SELECT COUNT(*) FROM "user"` → 9 users (correct). Tests: 347 npm + 392 Rails = 739 passing.
 - **Commit:** `182626c`
 
-### 2. Table-name collision / disambiguation (Taiga `projects_projecttemplate` answered for "projects" → 2 vs real 0)
+### 2. Table-name collision / disambiguation (Taiga `projects_projecttemplate` answered for "projects" → 2 vs real 0) — ✅ DONE 2026-04-24
 
-- **Problem:** Entity-candidate selection picks the highest-scoring partial match. "projects" matched both `project` and `projecttemplate`.
-- **Solution:** In `entity-candidates.ts`, prefer entities whose name **exactly** equals the question term (or its singular form) before substring matches. Add tie-breaker: prefer fewer underscore segments (simpler name).
-- **Effort:** 1 hour; new test cases: "how many projects" with both `projects_project` and `projects_projecttemplate` in registry → must pick `projects_project`.
+- **Problem:** Both entities scored 0; rowCount tiebreaker picked the (wrong) template table.
+- **Solution shipped:** Tokenize entity name on `_`, score each token against question (singular + plural forms via word boundary match). Sort by score, then by fewer name segments, then rowCount. Both TS and Ruby.
+- **Verified live:** Taiga "how many projects" → `SELECT COUNT(*) FROM "projects_project"` → 0 (correct).
+- **Commit:** `d95cdbf`. Tests: 742 passing (+3 new).
 
 ### 3. Plausible-but-wrong fundamental risk
 

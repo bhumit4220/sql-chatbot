@@ -27,6 +27,30 @@ Both are V1.2 registry-aliasing improvements.
 
 ---
 
+## 2026-04-24 — V1.2 #2 LANDED: entity-candidate disambiguation (Taiga fix)
+
+**Roadmap P1 #2 complete.** Live-verified.
+
+**Before:** Both `projects_project` (0 rows, real) and `projects_projecttemplate` (2 rows, lookup) scored 0; rowCount tiebreaker picked the template → user saw "2 projects: Scrum / Kanban" when real project count is 0.
+
+**After:** Tokenize entity name on `_`; score each token against question (singular + plural). Tiebreaker: fewer name segments, then rowCount.
+
+**Live verification:**
+```
+Q: "how many projects"
+SQL: SELECT COUNT(*) FROM "projects_project"
+A:   "No matching records found." (0 — correct)
+```
+
+**Files:** `entity-candidates.ts` + `entity_candidates.rb` + 4 new regression tests covering Django nested naming and TypeORM-like patterns.
+
+**Tests:** 348 npm + 394 Rails = **742 passing** (+3 new). Zero regressions.
+**Commit:** `d95cdbf`
+
+**Next: V1.2 #3 — sanity-check COUNT vs `pg_class.reltuples` so plausible-but-wrong answers get flagged.**
+
+---
+
 ## 2026-04-24 — V1.2 #1 LANDED: quote SQL identifiers (Gitea fix)
 
 **Roadmap item P1 #1 complete.** Live-verified end-to-end.
