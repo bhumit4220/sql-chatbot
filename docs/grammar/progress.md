@@ -27,6 +27,26 @@ Both are V1.2 registry-aliasing improvements.
 
 ---
 
+## 2026-04-24 — Refactor: alias rules → AliasRule registry (no patchwork)
+
+**User feedback:** the V1.2 #4/#5/#6 fixes (Django plural-app / TypeORM `_entity` / Keycloak common-prefix) were borderline patchwork — 3 hard-coded `if`-branches inline in the alias loop.
+
+**Refactored to clean architecture:**
+- New `AliasRule` type: `(name, parts, ctx) => string[]`
+- Each naming-convention rule is a self-contained pure function
+- `ALIAS_RULES` registry array; main loop iterates and is rule-agnostic
+- Adding a new convention = one entry in the array, no edits to the loop
+
+**Same behavior, zero regressions:**
+- 359 npm tests still pass
+- Taiga: "how many user stories" → grammar match, same SQL ✓
+- n8n: "how many workflows" → grammar match, same SQL ✓
+- Keycloak: "count of roles" → grammar match, same SQL ✓
+
+**Commit:** `c14f94f`
+
+---
+
 ## 2026-04-24 — V1.2 #11 LANDED: data-profiler enums + type-mismatch rejection
 
 **Roadmap P4 #11 complete + bonus type-safety fix.**
