@@ -7,6 +7,7 @@ require "sql_chatbot/prompts/answer"
 require "sql_chatbot/services/sql_executor"
 require "sql_chatbot/services/grammar_pipeline"
 require "sql_chatbot/grammar/miss_logger"
+require "sql_chatbot/grammar/sanity_check"
 
 module SqlChatbot
   module Services
@@ -467,8 +468,32 @@ module SqlChatbot
           return :miss
         end
 
-        # Only now — after successful validation AND execution — commit to the
-        # grammar path by emitting grammar_matched and the SQL event.
+        # Sanity check: for COUNT primitives, compare result to registry rowCount.
+        # Catches "plausible but wrong" answers (e.g., reserved-word silent
+        # corruption) before the user sees them.
+        intent = result[:intent] || {}
+        primitive = (intent[:primitive] || intent["primitive"]).to_s
+        entity_name = registry.aliases[intent[:entity] || intent["entity"]] || intent[:entity] || intent["entity"]
+        sanity_entity = entity_name && registry.entities[entity_name.to_s]
+        sanity = if sanity_entity
+          SqlChatbot::Grammar::SanityCheck.check_count(primitive, sanity_entity, db_result[:rows])
+        else
+          { ok: true }
+        end
+
+        unless sanity[:ok]
+          SqlChatbot::Grammar::MissLogger.log(miss_log, {
+            question: question,
+            reason: sanity[:reason],
+            extracted: result[:intent],
+            resulting_sql: validation[:sql],
+          }) rescue nil
+          yielder.yield({ type: "grammar_fallback", data: { reason: "count_mismatch" } })
+          return :miss
+        end
+
+        # Only now — after successful validation AND execution AND sanity check —
+        # commit to the grammar path by emitting grammar_matched and the SQL event.
         yielder.yield({ type: "grammar_matched", data: {} })
         yielder.yield({ type: "sql", query: validation[:sql], explanation: "grammar" })
 
