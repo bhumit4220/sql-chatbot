@@ -27,6 +27,23 @@ Both are V1.2 registry-aliasing improvements.
 
 ---
 
+## 2026-04-27 — V1.2 #13 + #9 LANDED
+
+**#13 widget manifest 404 cleanup** (commit `344d61d`):
+- Manifest fetch is now opt-in via `data-manifest-url`. Default off.
+- Verified Chatwoot: previously 2 noisy 404s → zero.
+
+**#9 programmatic LIST rendering** (commit `641ba7d`):
+- New `tryRenderListProgrammatically()` — pure function, no LLM.
+- Orchestrator (TS + Rails) tries programmatic render first when grammar matched LIST + ≤10 rows.
+- Live-verified on Chatwoot: "list labels" previously rendered "4 labels" (LLM dropped one); now deterministically renders all 5: bug, feature, urgent, billing, technical.
+
+**Tests:** 366 npm + 407 Rails = **773 passing** (+14). Zero regressions.
+
+**10 V1.2 issues shipped this session.** Both fixes are pure architectural: pure functions in dedicated files, conditionally skipped at the orchestrator level.
+
+---
+
 ## 2026-04-24 — Refactor: alias rules → AliasRule registry (no patchwork)
 
 **User feedback:** the V1.2 #4/#5/#6 fixes (Django plural-app / TypeORM `_entity` / Keycloak common-prefix) were borderline patchwork — 3 hard-coded `if`-branches inline in the alias loop.

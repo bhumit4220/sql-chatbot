@@ -12,7 +12,7 @@
 | **Branch** | `feature/compositional-grammar` (independent — never merged back) |
 | **Last updated** | 2026-04-24 (real widget-UI validation) |
 | **Updated by** | session 2026-04-24 |
-| **Tests** | **359 npm + 400 Rails = 759 passing.** V1.2 #1-#6 + #8 + #11 landed: identifier quoting, entity disambiguation, COUNT sanity check, naming-convention aliases, graceful fallback, data-profiler enums + type-mismatch rejection. Live-verified end-to-end on every fix. |
+| **Tests** | **366 npm + 407 Rails = 773 passing.** V1.2 #1-#6 + #8 + #9 + #11 + #13 landed (10 of 16 — all pure architectural fixes, no patchwork). Live-verified end-to-end on every fix. |
 | **Widget-UI results** | Chatwoot (Rails 7): **6/8 grammar, 7/8 correct**. Saleor (Django): **5/8 grammar, 7/8 correct**. Gitea (Go): **7/8 grammar, 7/8 correct**. Redmine (Rails docker): **8/8 perfect**. MSP (Rails gem native): **9/12 grammar, 12/12 rendered**. |
 | **Blocked** | Mattermost (CSP script-src 'self'), **Directus (CSP)**, **Umami (CSP)**, 2BNCHILL (app-level recursion bug), Medusa (app not running, DB-only) |
 | **Widget-UI also tested on** | n8n (Node/TypeORM, 2/6 gram), **Listmonk** (Go mailing, **6/6 = 100%**), **Keycloak** (Java IAM, 92 tables, 5/8 gram + 7/8 UI), **Taiga** (Django PM, 73 tables, 3/8 gram + 7/8 correct UI — 1 semantic mismatch exposed registry-aliasing gap) |

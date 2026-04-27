@@ -68,11 +68,11 @@ Every issue surfaced during the 9-app DB-verified test sweep, paired with a conc
 - **Live-verified:** Redmine "any issues piling up" now renders the graceful message instead of the PG syntax error.
 - **Commit:** `e1af8a0`.
 
-### 9. LIST results truncated / one row lost in answer LLM (Chatwoot "5 labels listed as 4")
+### 9. LIST results truncated / one row lost in answer LLM (Chatwoot "5 labels listed as 4") — ✅ DONE 2026-04-27
 
-- **Problem:** Answer-stream LLM occasionally drops items when listing.
-- **Solution:** For LIST primitives that return ≤10 rows, render a fixed template programmatically (`The X are: a, b, c, ...`) instead of streaming through answer LLM.
-- **Effort:** 1 hour.
+- **Solution shipped:** Pure function `tryRenderListProgrammatically(primitive, displayLabel, rows)` — when grammar matched LIST and rows ≤ 10, render a deterministic template ("Here are the 5 Labels: ..."). LLM is bypassed entirely. Both TS + Ruby. Orchestrator attempts programmatic render first; falls through to streamLLM if conditions not met.
+- **Live-verified on Chatwoot:** "list labels" — previously LLM dropped one, now all 5 rendered deterministically.
+- **Commit:** `641ba7d`. Tests: 773 passing (+14 new).
 
 ---
 
@@ -103,11 +103,11 @@ Every issue surfaced during the 9-app DB-verified test sweep, paired with a conc
   b) **Reverse-proxy recipes doc** (one page): nginx/Caddy/Cloudflare snippets that proxy `/chatbot/*` to the chatbot server. Covers any app that can configure its proxy.
 - **Effort:** Middleware = ~1 day each. Recipes doc = 1 hour.
 
-### 13. Widget tries to fetch `/chatbot-manifest.json` from host origin (404)
+### 13. Widget tries to fetch `/chatbot-manifest.json` from host origin (404) — ✅ DONE 2026-04-27
 
-- **Problem:** Stale relative path in widget.
-- **Solution:** Use `${baseUrl}/api/manifest` consistently in widget source.
-- **Effort:** 15 min.
+- **Solution shipped:** Manifest fetch is now opt-in via `data-manifest-url` script-tag attribute. Default off → no 404 noise on apps that don't ship a build-time manifest.
+- **Verified on Chatwoot:** previous 2 manifest 404s gone. Widget loads silently.
+- **Commit:** `344d61d`.
 
 ---
 
