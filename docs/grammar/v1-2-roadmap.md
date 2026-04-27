@@ -62,13 +62,11 @@ Every issue surfaced during the 9-app DB-verified test sweep, paired with a conc
   c) **Fuzzy entity matching** (Levenshtein distance ≤2) for typo tolerance — "ordrs" → "orders", "agnts" → "agents".
 - **Effort:** 2-3 hours.
 
-### 8. LLM fallback silent SQL errors reach user (Redmine "any issues piling up" → `syntax error at or near "is"`)
+### 8. LLM fallback silent SQL errors reach user (Redmine "any issues piling up" → `syntax error at or near "is"`) — ✅ DONE 2026-04-24
 
-- **Problem:** Fallback LLM generated SQL with reserved-word alias; PG error rendered as the answer.
-- **Solution:** In `handleData` fallback path, on PG error:
-  a) Retry once with error message as feedback (already done for column errors — extend to syntax errors and missing-table errors).
-  b) If retry still errors, render `"I couldn't answer that, can you rephrase?"` instead of the raw PG error.
-- **Effort:** 1 hour.
+- **Solution shipped:** LLM-fallback retry extended to ALL PG errors (syntax / missing table / column). After retry exhausts, render `"I couldn't answer that one — could you rephrase or be more specific?"` graceful token instead of raw PG.
+- **Live-verified:** Redmine "any issues piling up" now renders the graceful message instead of the PG syntax error.
+- **Commit:** `e1af8a0`.
 
 ### 9. LIST results truncated / one row lost in answer LLM (Chatwoot "5 labels listed as 4")
 

@@ -27,6 +27,24 @@ Both are V1.2 registry-aliasing improvements.
 
 ---
 
+## 2026-04-24 — V1.2 #8 LANDED: graceful LLM-fallback on SQL errors
+
+**Roadmap P3 #8 complete.** No more raw PG errors to users.
+
+**Before:** Redmine "any issues piling up" → fallback LLM generated SQL with `is` reserved-word alias → PG syntax error → user saw `syntax error at or near "is"`.
+
+**After:** retry once with error feedback → if retry still fails, render `"I couldn't answer that one — could you rephrase or be more specific?"` token. No `error` event ever reaches the user.
+
+Both TS and Rails Orchestrator fallback paths updated. LLM retry now triggers for ALL PG errors (syntax / missing table / column), not just column errors.
+
+**Live-verified:** Redmine same query now renders the graceful prompt.
+**Tests:** 759 still passing (4 existing tests updated to assert new behavior).
+**Commit:** `e1af8a0`
+
+**7 V1.2 issues shipped this session.** Next: P3 #9 (LIST primitive truncation).
+
+---
+
 ## 2026-04-24 — V1.2 #4 + #5 + #6 LANDED: naming-convention aliases (Taiga + n8n + Keycloak)
 
 **Three roadmap items shipped together** because they all live in the same alias loop in `registry-loader.ts`.
