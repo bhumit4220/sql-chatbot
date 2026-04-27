@@ -67,17 +67,17 @@ module SqlChatbot
       end
 
       def self.with_soft_delete(sql, entity, col)
-        clause = "#{entity.table}.#{col} IS NULL"
+        quoted_ref = Primitives.qc(entity.table, col)
+        clause = "#{quoted_ref} IS NULL"
 
-        # Skip if already filtered on this column
-        return sql if /#{Regexp.escape(entity.table)}\.#{Regexp.escape(col)}/i.match?(sql)
+        # Skip if already filtered on this column (match either quoted or unquoted form for safety)
+        return sql if sql.include?(quoted_ref)
+        return sql if /\b#{Regexp.escape(entity.table)}\.#{Regexp.escape(col)}\b/i.match?(sql)
 
         if /\bWHERE\b/i.match?(sql)
-          # Inject after WHERE keyword
           return sql.sub(/\bWHERE\b/i) { "WHERE #{clause} AND " }
         end
 
-        # No WHERE: inject before GROUP BY / ORDER BY / LIMIT, or append
         before_match = sql.match(/ (GROUP BY|ORDER BY|LIMIT) /i)
         if before_match
           return sql.sub(before_match[0]) { " WHERE #{clause}#{before_match[0]}" }

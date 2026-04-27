@@ -35,10 +35,10 @@ describe('compileTemplate', () => {
     const out = compileTemplate(intent, registry);
     expect(out.ok).toBe(true);
     if (out.ok) {
-      expect(out.sql).toContain('SELECT COUNT(*) FROM users');
-      expect(out.sql).toContain('users.status = 1');
-      expect(out.sql).toContain("users.created_at >= NOW() - INTERVAL '30 days'");
-      expect(out.sql).toContain('users.deleted_at IS NULL');
+      expect(out.sql).toContain('SELECT COUNT(*) FROM "users"');
+      expect(out.sql).toContain('"users"."status" = 1');
+      expect(out.sql).toContain(`"users"."created_at" >= NOW() - INTERVAL '30 days'`);
+      expect(out.sql).toContain('"users"."deleted_at" IS NULL');
     }
   });
 

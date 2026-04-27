@@ -43,10 +43,10 @@ RSpec.describe SqlChatbot::Grammar::TemplateCompiler do
     }
     out = described_class.compile(intent, registry)
     expect(out[:ok]).to be true
-    expect(out[:sql]).to include("SELECT COUNT(*) FROM users")
-    expect(out[:sql]).to include("users.status = 1")
-    expect(out[:sql]).to include("users.created_at >= NOW() - INTERVAL '30 days'")
-    expect(out[:sql]).to include("users.deleted_at IS NULL")
+    expect(out[:sql]).to include('SELECT COUNT(*) FROM "users"')
+    expect(out[:sql]).to include('"users"."status" = 1')
+    expect(out[:sql]).to include(%("users"."created_at" >= NOW() - INTERVAL '30 days'))
+    expect(out[:sql]).to include('"users"."deleted_at" IS NULL')
   end
 
   it "returns {ok: false} when entity not in registry" do

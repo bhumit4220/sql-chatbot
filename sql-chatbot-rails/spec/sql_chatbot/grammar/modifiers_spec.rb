@@ -21,33 +21,33 @@ RSpec.describe SqlChatbot::Grammar::Modifiers do
     )
   end
 
-  it "applies WHERE with enum value resolution" do
+  it "applies WHERE with enum value resolution (quoted)" do
     m = { kind: :where, field: "status", op: "eq", value: "active" }
-    out = described_class.apply("SELECT COUNT(*) FROM users", m, entity)
-    expect(out).to eq("SELECT COUNT(*) FROM users WHERE users.status = 1")
+    out = described_class.apply('SELECT COUNT(*) FROM "users"', m, entity)
+    expect(out).to eq('SELECT COUNT(*) FROM "users" WHERE "users"."status" = 1')
   end
 
   it "rejects unknown enum value" do
     m = { kind: :where, field: "status", op: "eq", value: "pending" }
-    expect { described_class.apply("SELECT COUNT(*) FROM users", m, entity) }
+    expect { described_class.apply('SELECT COUNT(*) FROM "users"', m, entity) }
       .to raise_error(/enum value.*not.*registry/i)
   end
 
-  it "applies TIME last_30_days" do
+  it "applies TIME last_30_days (quoted)" do
     m = { kind: :time, field: "created_at", window: "last_30_days" }
-    out = described_class.apply("SELECT COUNT(*) FROM users", m, entity)
-    expect(out).to eq("SELECT COUNT(*) FROM users WHERE users.created_at >= NOW() - INTERVAL '30 days'")
+    out = described_class.apply('SELECT COUNT(*) FROM "users"', m, entity)
+    expect(out).to eq(%(SELECT COUNT(*) FROM "users" WHERE "users"."created_at" >= NOW() - INTERVAL '30 days'))
   end
 
   it "chains multiple modifiers with AND" do
-    sql = "SELECT COUNT(*) FROM users"
+    sql = 'SELECT COUNT(*) FROM "users"'
     sql = described_class.apply(sql, { kind: :where, field: "status", op: "eq", value: "active" }, entity)
     sql = described_class.apply(sql, { kind: :time, field: "created_at", window: "last_30_days" }, entity)
-    expect(sql).to include("WHERE users.status = 1")
-    expect(sql).to include("AND users.created_at >=")
+    expect(sql).to include('WHERE "users"."status" = 1')
+    expect(sql).to include('AND "users"."created_at" >=')
   end
 
-  it "applies JOIN using association join_clause" do
+  it "applies JOIN using association join_clause (quoted)" do
     with_assoc = SqlChatbot::Grammar::Entity.new(
       name: entity.name, table: entity.table, display_label: entity.display_label,
       row_count: entity.row_count, primary_key: entity.primary_key, timestamps: entity.timestamps,
@@ -59,11 +59,11 @@ RSpec.describe SqlChatbot::Grammar::Modifiers do
         )
       }
     )
-    out = described_class.apply("SELECT COUNT(*) FROM users", { kind: :join, association: "orders" }, with_assoc)
-    expect(out).to include("JOIN orders ON users.id = orders.user_id")
+    out = described_class.apply('SELECT COUNT(*) FROM "users"', { kind: :join, association: "orders" }, with_assoc)
+    expect(out).to include('JOIN "orders" ON "users"."id" = "orders"."user_id"')
   end
 
-  it "applies GROUP BY" do
+  it "applies GROUP BY (quoted)" do
     e2 = SqlChatbot::Grammar::Entity.new(
       name: entity.name, table: entity.table, display_label: entity.display_label,
       row_count: entity.row_count, primary_key: entity.primary_key, timestamps: entity.timestamps,
@@ -72,18 +72,18 @@ RSpec.describe SqlChatbot::Grammar::Modifiers do
       ),
       scopes: entity.scopes, associations: entity.associations, ranking_candidates: entity.ranking_candidates
     )
-    out = described_class.apply("SELECT COUNT(*) FROM users", { kind: :group_by, field: "country" }, e2)
-    expect(out).to include("GROUP BY users.country")
+    out = described_class.apply('SELECT COUNT(*) FROM "users"', { kind: :group_by, field: "country" }, e2)
+    expect(out).to include('GROUP BY "users"."country"')
   end
 
   it "HAVING requires GROUP BY" do
-    expect { described_class.apply("SELECT 1 FROM users", { kind: :having, field: "c", op: "gt", value: 5 }, entity) }
+    expect { described_class.apply('SELECT 1 FROM "users"', { kind: :having, field: "c", op: "gt", value: 5 }, entity) }
       .to raise_error(/GROUP BY/)
   end
 
-  it "applies ORDER BY" do
-    out = described_class.apply("SELECT * FROM users", { kind: :order_by, field: "created_at", direction: "desc" }, entity)
-    expect(out).to include("ORDER BY users.created_at DESC")
+  it "applies ORDER BY (quoted)" do
+    out = described_class.apply('SELECT * FROM "users"', { kind: :order_by, field: "created_at", direction: "desc" }, entity)
+    expect(out).to include('ORDER BY "users"."created_at" DESC')
   end
 
   it "applies LIMIT" do

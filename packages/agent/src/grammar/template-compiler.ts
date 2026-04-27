@@ -1,5 +1,5 @@
 import { Registry, Entity } from './registry.js';
-import { buildPrimitive, PrimitiveKind } from './primitives.js';
+import { buildPrimitive, PrimitiveKind, qc } from './primitives.js';
 import { applyModifier, Modifier } from './modifiers.js';
 
 export type Intent =
@@ -59,9 +59,11 @@ export function compileTemplate(intent: Intent, registry: Registry): CompileResu
 
 function withSoftDelete(sql: string, entity: Entity): string {
   const col = entity.timestamps.deleted!;
-  const clause = `${entity.table}.${col} IS NULL`;
+  const quotedRef = qc(entity.table, col);
+  const clause = `${quotedRef} IS NULL`;
   // If the column reference already appears (user explicitly filtered on it), skip.
-  if (new RegExp(`${entity.table}\\.${col}`, 'i').test(sql)) return sql;
+  // Match either the quoted form or the unquoted-pair form (defensive).
+  if (sql.includes(quotedRef) || new RegExp(`\\b${entity.table}\\.${col}\\b`, 'i').test(sql)) return sql;
   if (/ WHERE /i.test(sql)) return sql.replace(/ WHERE /i, ` WHERE ${clause} AND `);
   // No WHERE: inject before GROUP BY/ORDER BY/LIMIT, or append.
   const beforeGroupOrOrder = sql.match(/ (GROUP BY|ORDER BY|LIMIT) /i);

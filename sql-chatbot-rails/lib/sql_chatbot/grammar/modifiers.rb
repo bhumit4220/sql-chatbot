@@ -1,10 +1,19 @@
 # frozen_string_literal: true
 
 require "sql_chatbot/grammar/registry"
+require "sql_chatbot/grammar/primitives"
 
 module SqlChatbot
   module Grammar
     module Modifiers
+      def self.q(name)
+        Primitives.q(name)
+      end
+
+      def self.qc(table, col)
+        Primitives.qc(table, col)
+      end
+
       WINDOWS = {
         "today"       => "DATE_TRUNC('day', NOW())",
         "yesterday"   => "DATE_TRUNC('day', NOW() - INTERVAL '1 day')",
@@ -64,14 +73,14 @@ module SqlChatbot
 
         op = OPS[modifier[:op].to_s] || "="
         formatted = value.is_a?(String) ? "'#{value.gsub("'", "''")}'" : value
-        append_clause(sql, "#{entity.table}.#{field_name} #{op} #{formatted}")
+        append_clause(sql, "#{qc(entity.table, field_name)} #{op} #{formatted}")
       end
 
       def self.apply_time(sql, modifier, entity)
         window_key = modifier[:window].to_s
         expr = WINDOWS[window_key]
         raise "unknown time window #{window_key}" unless expr
-        append_clause(sql, "#{entity.table}.#{modifier[:field]} >= #{expr}")
+        append_clause(sql, "#{qc(entity.table, modifier[:field])} >= #{expr}")
       end
 
       def self.apply_join(sql, modifier, entity)
@@ -80,9 +89,14 @@ module SqlChatbot
         raise "association '#{assoc_name}' not on entity #{entity.name}" unless assoc
 
         join_clause = assoc.join_clause
-        rhs = (join_clause.split("=")[1] || "").strip
-        target_table = (rhs.split(".")[0] || "").strip
-        join_sql = " JOIN #{target_table} ON #{join_clause}"
+        # Re-emit the join clause with quoted identifiers.
+        # joinClause format: "src_table.src_col = tgt_table.tgt_col"
+        lhs, rhs = join_clause.split("=").map(&:strip)
+        lt, lc = lhs.split(".")
+        rt, rc = rhs.split(".")
+        target_table = rt
+        quoted_clause = "#{qc(lt, lc)} = #{qc(rt, rc)}"
+        join_sql = " JOIN #{q(target_table)} ON #{quoted_clause}"
 
         if /\bWHERE\b/i.match?(sql)
           sql.sub(/\bWHERE\b/i) { "#{join_sql} WHERE " }
@@ -94,7 +108,7 @@ module SqlChatbot
       def self.apply_group_by(sql, modifier, entity)
         field_name = modifier[:field].to_s
         raise "group_by field '#{field_name}' not on entity #{entity.name}" unless entity.fields[field_name]
-        "#{sql} GROUP BY #{entity.table}.#{field_name}"
+        "#{sql} GROUP BY #{qc(entity.table, field_name)}"
       end
 
       def self.apply_having(sql, modifier, entity)
@@ -107,7 +121,7 @@ module SqlChatbot
         field_name = modifier[:field].to_s
         raise "order_by field '#{field_name}' not on entity #{entity.name}" unless entity.fields[field_name]
         direction = (modifier[:direction] || modifier["direction"] || "desc").to_s.upcase
-        "#{sql} ORDER BY #{entity.table}.#{field_name} #{direction}"
+        "#{sql} ORDER BY #{qc(entity.table, field_name)} #{direction}"
       end
 
       def self.apply_limit(sql, modifier)
