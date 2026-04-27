@@ -49,6 +49,16 @@ function applyWhere(sql: string, m: Extract<Modifier, { kind: 'where' }>, e: Ent
       throw new Error(`enum value '${value}' not in registry for ${e.name}.${m.field}`);
     }
     value = field.enumValues[String(value)];
+  } else if (
+    // V1.2: numeric column rejects non-numeric string. Falls through to LLM
+    // which has full-schema context and can pick the right enum mapping.
+    (field.type === 'int' || field.type === 'decimal') &&
+    typeof value === 'string' &&
+    !/^-?\d+(\.\d+)?$/.test(value)
+  ) {
+    throw new Error(`type mismatch: ${field.type} column ${e.name}.${m.field} cannot equal string '${value}'`);
+  } else if (field.type === 'bool' && typeof value === 'string' && !/^(true|false|t|f|0|1)$/i.test(value)) {
+    throw new Error(`type mismatch: bool column ${e.name}.${m.field} cannot equal string '${value}'`);
   }
   const op = OPS[m.op] ?? '=';
   const formatted = typeof value === 'string' ? `'${value.replace(/'/g, "''")}'` : value;

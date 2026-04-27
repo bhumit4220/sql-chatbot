@@ -62,13 +62,18 @@ module SqlChatbot
         raise "field '#{field_name}' not on entity #{entity.name}" unless field
 
         value = modifier[:value]
-        if field.type.to_s == "enum"
+        ftype = field.type.to_s
+        if ftype == "enum"
           enum_values = field.enum_values || {}
           str_value = value.to_s
           unless enum_values.key?(str_value) || enum_values.key?(str_value.to_sym)
             raise "enum value '#{value}' not in registry for #{entity.name}.#{field_name}"
           end
           value = enum_values[str_value] || enum_values[str_value.to_sym]
+        elsif (ftype == "int" || ftype == "decimal") && value.is_a?(String) && value !~ /\A-?\d+(\.\d+)?\z/
+          raise "type mismatch: #{ftype} column #{entity.name}.#{field_name} cannot equal string '#{value}'"
+        elsif ftype == "bool" && value.is_a?(String) && value !~ /\A(true|false|t|f|0|1)\z/i
+          raise "type mismatch: bool column #{entity.name}.#{field_name} cannot equal string '#{value}'"
         end
 
         op = OPS[modifier[:op].to_s] || "="

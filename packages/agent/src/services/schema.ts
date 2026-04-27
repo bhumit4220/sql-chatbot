@@ -95,6 +95,8 @@ export class SchemaService {
   private fkGraph: Map<string, Array<{ fromCol: string; toTable: string; toCol: string }>> = new Map();
   // Structured table data populated by discover() for use by grammar registry-loader.
   private structuredTables: StructuredTable[] = [];
+  // Profiled bare-int columns: table → col → {value: count}. V1.2 #11.
+  private profiledValues: Map<string, Map<string, Record<string, number>>> = new Map();
 
   async discover(databaseUrl: string): Promise<void> {
     const pool = new Pool({ connectionString: databaseUrl });
@@ -367,6 +369,20 @@ export class SchemaService {
               if (checkVals && checkVals.length > 0) {
                 enumValues = {};
                 checkVals.forEach(v => { enumValues![v] = v; });
+              }
+            }
+
+            // V1.2 #11: data-profiler-derived enum values for bare-int discriminator
+            // columns (status, role, etc.) that aren't declared as PG enum or
+            // check-constraint enum. Lets grammar match `where status = 'active'`
+            // against magic-int columns.
+            if (!enumValues) {
+              const profiled = this.profiledValues.get(table)?.get(col.column_name);
+              if (profiled && Object.keys(profiled).length > 0) {
+                enumValues = {};
+                for (const [v, _cnt] of Object.entries(profiled)) {
+                  enumValues[v] = v;
+                }
               }
             }
 
@@ -812,6 +828,9 @@ export class SchemaService {
     annotatedColumns: Set<string>,
   ): Promise<Map<string, string[]>> {
     const result = new Map<string, string[]>();
+    // V1.2 #11: also capture structured value\u2192count pairs alongside the text
+    // annotation so the schema-only registry can promote these to Field.enumValues.
+    this.profiledValues = new Map();
     const MAX_PROFILE_COLUMNS = 50;
     let profiledCount = 0;
 
@@ -856,6 +875,18 @@ export class SchemaService {
 
         if (!result.has(table)) result.set(table, []);
         result.get(table)!.push(`  -- DATA VALUES: ${col.column_name} \u2192 ${pairs.join(', ')}`);
+
+        // Structured capture for the registry. Only promote to enumValues when
+        // there are 2-8 distinct values and the column is bare-int (so the
+        // registry's existing enum field gets populated).
+        if (profRes.rows.length >= 2 && profRes.rows.length <= 8) {
+          const valueCount: Record<string, number> = {};
+          for (const r of profRes.rows as Array<{ value: string; cnt: string }>) {
+            valueCount[r.value] = parseInt(r.cnt, 10);
+          }
+          if (!this.profiledValues.has(table)) this.profiledValues.set(table, new Map());
+          this.profiledValues.get(table)!.set(col.column_name, valueCount);
+        }
         profiledCount++;
       } catch {
         // Skip columns that fail
