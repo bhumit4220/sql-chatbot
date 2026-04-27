@@ -27,6 +27,37 @@ Both are V1.2 registry-aliasing improvements.
 
 ---
 
+## 2026-04-24 — V1.2 #4 + #5 + #6 LANDED: naming-convention aliases (Taiga + n8n + Keycloak)
+
+**Three roadmap items shipped together** because they all live in the same alias loop in `registry-loader.ts`.
+
+**#4 Django plural-app:** `singularize(prefix) === suffix` triggers alias.
+**#5 TypeORM `_entity` suffix:** strips `_entity` and exposes bare model.
+**#6 Common-prefix detection:** 5+ shared first-segments triggers stripped alias.
+
+Plus a scoring upgrade in entity-candidates: whitespace-collapsed match with **length-weighted score** so longer token matches (e.g., "userstories" 11 chars) beat shorter ones (e.g., "users" 5 chars) when both are substrings of the qCompact form.
+
+**Live-verified — every previous-fallback question now grammar-matches:**
+
+| App | Question | Before | After |
+|---|---|---|---|
+| Taiga | "how many user stories" | fallback | `SELECT COUNT(*) FROM "userstories_userstory"` ✅ |
+| Taiga | "how many epics" | fallback | `SELECT COUNT(*) FROM "epics_epic"` ✅ |
+| Taiga | "how many milestones" | fallback | `SELECT COUNT(*) FROM "milestones_milestone"` ✅ |
+| n8n | "how many workflows" | fallback | `SELECT COUNT(*) FROM "workflow_entity"` ✅ |
+| n8n | "count of tags" | fallback | `SELECT COUNT(*) FROM "tag_entity"` ✅ |
+| n8n | "how many credentials" | fallback | `SELECT COUNT(*) FROM "credentials_entity"` ✅ |
+| Keycloak | "how many users" | fallback | `SELECT COUNT(*) FROM "user_entity"` ✅ |
+| Keycloak | "count of roles" | fallback | `SELECT COUNT(*) FROM "keycloak_role"` ✅ |
+| Keycloak | "how many groups" | fallback | `SELECT COUNT(*) FROM "keycloak_group"` ✅ |
+
+**Tests:** 359 npm + 400 Rails = **759 passing** (+4 new alias tests). Zero regressions.
+**Commit:** `7e036d1`
+
+**6 roadmap items shipped in this session.** Continuing to P3.
+
+---
+
 ## 2026-04-24 — V1.2 #3 LANDED: COUNT sanity check (defense-in-depth)
 
 **Roadmap P1 #3 complete.** Catches plausible-but-wrong answers universally.

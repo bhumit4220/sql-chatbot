@@ -32,23 +32,22 @@ Every issue surfaced during the 9-app DB-verified test sweep, paired with a conc
 
 ## P2 — Registry naming-convention gaps
 
-### 4. Django plural-app naming (Taiga `userstories_userstory`, `epics_epic`)
+### 4. Django plural-app naming (Taiga `userstories_userstory`, `epics_epic`) — ✅ DONE 2026-04-24
 
-- **Problem:** Existing `<app>_<model>` alias only strips when prefix === suffix exactly.
-- **Solution:** Extend alias rule in `registry-loader.ts`: if `singularize(prefix) === suffix`, register stripped form as alias. Covers `userstories_userstory → user_story`, `epics_epic → epic`, etc.
-- **Effort:** 30 min + tests.
+### 5. TypeORM `_entity` suffix (n8n `workflow_entity`, `tag_entity`) — ✅ DONE 2026-04-24
 
-### 5. TypeORM `_entity` suffix (n8n `workflow_entity`, `tag_entity`)
+### 6. Keycloak prefix-naming (`keycloak_role`, `keycloak_group`) — ✅ DONE 2026-04-24
 
-- **Problem:** Entity name in registry includes `_entity` suffix; LLM says `entity:'workflow'` and registry lookup fails.
-- **Solution:** In schema-only registry: if entity name ends with `_entity`, also register the stripped form (`workflow`) as an alias. Same pattern as Django prefix fix.
-- **Effort:** 15 min single rule.
-
-### 6. Keycloak prefix-naming (`user_entity`, `keycloak_role`, `keycloak_group`)
-
-- **Problem:** Domain prefix on entities (`keycloak_role`) blocks LLM term match for "roles".
-- **Solution:** Detect common prefix across multiple table names; register stripped aliases. If 5+ tables share `keycloak_` prefix, alias `keycloak_X` → `X`.
-- **Effort:** 1 hour.
+- **Solution shipped (all three in one drop):** Extended `registry-loader.ts` alias loop with three new rules:
+  1. `singularize(prefix) === suffix` → expose suffix + plural (`userstories_userstory` → `userstory`/`userstories`)
+  2. `last segment === "entity"` → expose stem (`workflow_entity` → `workflow`/`workflows`)
+  3. Pre-pass detects common prefixes shared by 5+ entities → expose stripped form (`keycloak_role` → `role`/`roles`)
+- **Plus** entity-candidate scoring upgrade: whitespace-collapsed length-weighted match so "user stories" → `userstories_userstory` wins over `users_user` (longer match dominates).
+- **Live-verified across 3 apps, 9 questions, all grammar-matched:**
+  - Taiga: user stories / epics / milestones
+  - n8n: workflows / tags / credentials
+  - Keycloak: users (user_entity) / roles (keycloak_role) / groups (keycloak_group)
+- **Commit:** `7e036d1`. Tests: 759 passing (+4 new).
 
 ---
 
