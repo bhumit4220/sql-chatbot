@@ -49,6 +49,57 @@ describe('buildSchemaOnlyRegistry', () => {
       joinClause: 'orders.user_id = users.id',
     });
   });
+
+  it('Keycloak-style common prefix (5+ tables) exposes stripped alias', () => {
+    const keycloakSchema = {
+      getTableList: () => [
+        { name: 'keycloak_role', rowCount: 32, primaryKey: 'id', columns: [] },
+        { name: 'keycloak_group', rowCount: 0, primaryKey: 'id', columns: [] },
+        { name: 'keycloak_attribute', rowCount: 0, primaryKey: 'id', columns: [] },
+        { name: 'keycloak_realm', rowCount: 1, primaryKey: 'id', columns: [] },
+        { name: 'keycloak_session', rowCount: 0, primaryKey: 'id', columns: [] },
+        { name: 'realm', rowCount: 1, primaryKey: 'id', columns: [] },
+      ],
+    } as any;
+    const r = buildSchemaOnlyRegistry(keycloakSchema);
+    expect(r.aliases.role).toBe('keycloak_role');
+    expect(r.aliases.roles).toBe('keycloak_role');
+    expect(r.aliases.group).toBe('keycloak_group');
+    expect(r.aliases.groups).toBe('keycloak_group');
+  });
+
+  it('TypeORM _entity suffix exposes bare model alias (workflow_entity → workflow)', () => {
+    const n8nSchema = {
+      getTableList: () => [
+        { name: 'workflow_entity', rowCount: 0, primaryKey: 'id', columns: [] },
+        { name: 'credentials_entity', rowCount: 0, primaryKey: 'id', columns: [] },
+        { name: 'tag_entity', rowCount: 0, primaryKey: 'id', columns: [] },
+      ],
+    } as any;
+    const r = buildSchemaOnlyRegistry(n8nSchema);
+    expect(r.aliases.workflow).toBe('workflow_entity');
+    expect(r.aliases.workflows).toBe('workflow_entity');
+    expect(r.aliases.credentials).toBe('credentials_entity');
+    expect(r.aliases.tag).toBe('tag_entity');
+    expect(r.aliases.tags).toBe('tag_entity');
+  });
+
+  it('Django plural-app naming exposes singular + plural alias (userstories_userstory)', () => {
+    const taigaSchema = {
+      getTableList: () => [
+        { name: 'userstories_userstory', rowCount: 0, primaryKey: 'id', columns: [] },
+        { name: 'epics_epic', rowCount: 0, primaryKey: 'id', columns: [] },
+        { name: 'milestones_milestone', rowCount: 0, primaryKey: 'id', columns: [] },
+      ],
+    } as any;
+    const r = buildSchemaOnlyRegistry(taigaSchema);
+    expect(r.aliases.userstory).toBe('userstories_userstory');
+    expect(r.aliases.userstories).toBe('userstories_userstory');
+    expect(r.aliases.epic).toBe('epics_epic');
+    expect(r.aliases.epics).toBe('epics_epic');
+    expect(r.aliases.milestone).toBe('milestones_milestone');
+    expect(r.aliases.milestones).toBe('milestones_milestone');
+  });
 });
 
 describe('loadRegistry', () => {

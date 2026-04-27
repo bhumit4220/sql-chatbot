@@ -102,6 +102,23 @@ export function buildSchemaOnlyRegistry(schema: SchemaServiceLike): Registry {
     }
   }
 
+  // Detect common prefix shared across 5+ entities (e.g. Keycloak's
+  // `keycloak_role`, `keycloak_group`, `keycloak_attribute` ...). Tables that
+  // start with this prefix get a stripped alias so questions about "role" /
+  // "group" map to the right entity even when the canonical name has the prefix.
+  const prefixCounts = new Map<string, number>();
+  for (const name of Object.keys(r.entities)) {
+    const idx = name.indexOf('_');
+    if (idx <= 0) continue;
+    const prefix = name.slice(0, idx);
+    if (prefix.length < 3) continue;
+    prefixCounts.set(prefix, (prefixCounts.get(prefix) ?? 0) + 1);
+  }
+  const commonPrefixes = new Set<string>();
+  for (const [prefix, count] of prefixCounts) {
+    if (count >= 5) commonPrefixes.add(prefix);
+  }
+
   // Build aliases for common question phrasings.
   // Rules (skip when alias clashes with a canonical entity name or another alias):
   //   plural form       → canonical    ("products" → "product_product" if entity has it)
@@ -115,19 +132,46 @@ export function buildSchemaOnlyRegistry(schema: SchemaServiceLike): Registry {
     altForms.push(pluralizeSimple(spaced));
     altForms.push(pluralizeSimple(name));
 
-    // Django pattern: <app>_<model> where app === model → strip duplicated prefix
+    // Django pattern: <app>_<model> where app and model refer to the same thing.
+    // Variants:
+    //   product_product (prefix === suffix)              → expose "product", "products"
+    //   userstories_userstory (singularize(prefix) === suffix) → expose "userstory", "userstories"
+    //   account_user (parts[0] === suffix)               → expose "user", "users"
     const parts = name.split('_');
     if (parts.length >= 2) {
       const last = parts[parts.length - 1];
       const prefix = parts.slice(0, -1).join('_');
+      const singularPrefix = singularize(prefix);
       if (prefix === last) {
-        altForms.push(last);                       // "product"
-        altForms.push(pluralizeSimple(last));      // "products"
-        altForms.push(last.replace(/_/g, ' '));    // same, but readable
-      } else if (parts[0] === last) {
-        // "account_user" etc. — expose "user"
         altForms.push(last);
         altForms.push(pluralizeSimple(last));
+        altForms.push(last.replace(/_/g, ' '));
+      } else if (singularPrefix === last) {
+        // userstories_userstory → expose "userstory" and "userstories"
+        altForms.push(last);
+        altForms.push(pluralizeSimple(last));
+        altForms.push(prefix); // expose the plural app form too
+      } else if (parts[0] === last) {
+        altForms.push(last);
+        altForms.push(pluralizeSimple(last));
+      }
+
+      // TypeORM convention: `<model>_entity` (workflow_entity, tag_entity).
+      // Strip the suffix and expose the bare model name + its plural.
+      if (last === 'entity' && parts.length >= 2) {
+        const stem = parts.slice(0, -1).join('_');
+        altForms.push(stem);
+        altForms.push(pluralizeSimple(stem));
+      }
+
+      // Common-prefix convention: e.g. Keycloak's `keycloak_role`.
+      // If 5+ entities share the same first segment, strip it and expose
+      // the rest as an alias.
+      const firstSeg = parts[0];
+      if (commonPrefixes.has(firstSeg) && parts.length >= 2) {
+        const stripped = parts.slice(1).join('_');
+        altForms.push(stripped);
+        altForms.push(pluralizeSimple(stripped));
       }
     }
 

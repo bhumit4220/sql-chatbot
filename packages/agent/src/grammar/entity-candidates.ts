@@ -41,6 +41,21 @@ function scoreEntity(question: string, entity: Entity, registry: Registry): numb
     if (re.test(q)) score += 4;
   }
 
+  // Whitespace-collapsed match: "user stories" → "userstories" → matches
+  // "userstories_userstory" token. Score is length-weighted so longer
+  // matches win (avoids "user" in "userstories" giving spurious credit
+  // to a `users_user` table when the real intent is `userstories_userstory`).
+  const qCompact = q.replace(/\s+/g, '');
+  let bestCompactLen = 0;
+  for (const tok of tokens) {
+    if (tok.length < 5) continue;
+    const candidates = [tok, pluralizeSimple(tok)];
+    for (const c of candidates) {
+      if (qCompact.includes(c) && c.length > bestCompactLen) bestCompactLen = c.length;
+    }
+  }
+  if (bestCompactLen > 0) score += bestCompactLen; // 5..15+
+
   return score;
 }
 

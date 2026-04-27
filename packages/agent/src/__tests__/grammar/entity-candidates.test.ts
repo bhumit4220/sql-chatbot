@@ -53,6 +53,18 @@ describe('selectEntityCandidates', () => {
     expect(c[0].name).toBe('projects_project');
   });
 
+  it('whitespace-collapsed match: "user stories" → userstories_userstory', () => {
+    const r: Registry = {
+      version: 1, generatedAt: '', framework: 'django', aliases: {},
+      entities: {
+        userstories_userstory: { name: 'userstories_userstory', table: 'userstories_userstory', displayLabel: 'UserStory', rowCount: 0 } as any,
+        users_user: { name: 'users_user', table: 'users_user', displayLabel: 'User', rowCount: 4 } as any,
+      },
+    };
+    const c = selectEntityCandidates('how many user stories do we have', r, 5);
+    expect(c[0].name).toBe('userstories_userstory');
+  });
+
   it('token match: question "users" matches users_user entity', () => {
     const r: Registry = {
       version: 1, generatedAt: '', framework: 'django', aliases: {},

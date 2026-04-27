@@ -33,6 +33,17 @@ module SqlChatbot
           end
         end
 
+        # Whitespace-collapsed match — length-weighted so longer matches win.
+        q_compact = q.gsub(/\s+/, "")
+        best_len = 0
+        tokens.each do |tok|
+          next if tok.length < 5
+          [tok, pluralize_simple(tok)].each do |c|
+            best_len = c.length if q_compact.include?(c) && c.length > best_len
+          end
+        end
+        score += best_len
+
         score
       end
 
